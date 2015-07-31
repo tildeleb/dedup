@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"github.com/tildeleb/hashland/jenkins"
+	"leb.io/hrff"
+	_ "github.com/tildeleb/hashland/jenkins"
+	"github.com/tildeleb/hashland/aeshash"
 )
 
 type kfe struct {
@@ -14,6 +16,13 @@ type kfe struct {
 	hash uint64
 }
 
+var blockSize = flag.Int64("b", 8192, "block size")
+var dirf = flag.Bool("d", false, "hash dirs")
+
+var _threshold hrff.Int64
+var threshold int64
+var total int64
+var count int64
 var hmap = make(map[uint64][]kfe, 100)
 var smap = make(map[int64][]kfe, 100)
 
@@ -27,30 +36,37 @@ func fullName(path string, fi os.FileInfo) string {
 	return p
 }
 
-
 func readPartialHash(path string, fi os.FileInfo) uint64 {
-	h := jenkins.New364(0)
-	buf := make([]byte, 8192)
-	p := fullName(path, fi)
-	f, err := os.Open(p)
+	//p := fullName(path, fi)
+	//fmt.Printf("readPartialHash: path=%q fi.Name=%q, p=%q\n", path, fi.Name(), p)
+	if fi.Size() == 0 {
+		return 0
+	}
+	//h := jenkins.New364(0)
+	var half = *blockSize/2
+	buf := make([]byte, *blockSize)
+
+	f, err := os.Open(path)
 	if err != nil {
-		panic("hashFile")
+		panic("readPartialHash: Open")
 	}
 	l := 0
-	if fi.Size() <= 8192 {
+	if fi.Size() <= *blockSize {
 		l, _ = f.Read(buf)
 	} else {
-		l, _ = f.Read(buf[0:4096])
-	    _, _ = f.Seek(-4096, os.SEEK_END)
-		l2, _ := f.Read(buf[4096:])
+		l, _ = f.Read(buf[0:half])
+	    _, _ = f.Seek(-half, os.SEEK_END)
+		l2, _ := f.Read(buf[half:])
 		l += l2
-		if l != 8192 {
-			panic("8192")
+		if l != int(*blockSize) {
+			panic("readPartialHash: blockSize")
 		}
 	}
 	f.Close()
-	h.Write(buf[0:l])
-	r := h.Sum64()
+	r := uint64(0)
+	r = aeshash.Hash(buf[0:l], 0)
+	//h.Write(buf[0:l])
+	//r = h.Sum64()
 	//fmt.Printf("file=%q, hash=0x%016x\n", p, r)
 	return r
 }
@@ -62,7 +78,7 @@ func addFile(path string, fi os.FileInfo) {
 	skey := fi.Size()
 	// 0 length files are currently silently ignored
 	// they are not identical
-	if (skey > 0) {
+	if (skey > threshold) {
 		hkey := uint64(readPartialHash(path, fi))
 		_, ok := hmap[hkey]
 		if !ok {
@@ -80,6 +96,25 @@ func addFile(path string, fi os.FileInfo) {
 	}
 }
 
+/*
+func hashDir(path string, fi os.FileInfo) {
+	p := fullName(path, fi)
+
+	//fmt.Printf("addDirs: dir=%q\n", p)
+	d, err := os.Open(p)
+	if err != nil {
+		continue
+	}
+	fis, err := d.Readdir(-1)
+	if err != nil || fis == nil {
+		fmt.Printf("addDirs: can't read %q\n", p)
+		continue
+	}
+	d.Close()
+	addDirs(p, fis)
+}
+*/
+
 func addDirs(path string, fis []os.FileInfo) {
 	//fmt.Printf("addDirs: path=%q\n", path)
 	for _, fi := range fis {
@@ -94,7 +129,8 @@ func addDirs(path string, fis []os.FileInfo) {
 			}
 			fis, err := d.Readdir(-1)
 			if err != nil || fis == nil {
-				panic("bad")
+				fmt.Printf("addDirs: can't read %q\n", fullName(path, fi))
+				continue
 			}
 			d.Close()
 			addDirs(p, fis)
@@ -107,9 +143,74 @@ func addDirs(path string, fis []os.FileInfo) {
 	}
 }
 
+func addDir(path string, fi os.FileInfo) (uint64, int64) {
+	var gh = aeshash.NewAES(0)
+	var hash uint64
+	var size, sizes int64
+	var cnt int
+
+	//fmt.Printf("addDir: path=%q\n", path)
+	if fi.Mode()&os.ModeDir == os.ModeDir {
+		d, err := os.Open(path)
+		if err != nil {
+			return 0, 0
+			fmt.Printf("addDir: path=%q\n", path)
+			panic("Open")
+		}
+		fis, err := d.Readdir(-1)
+		if err != nil || fis == nil {
+			//fmt.Printf("addDirs: can't read %q\n", fullName(path, fi))
+			panic("Readdir")
+		}
+		d.Close()
+		for _, fi := range fis {
+			p := fullName(path, fi)
+			//fmt.Printf("addDir: fi.Name=%q\n", fi.Name())
+			switch {
+			case fi.Mode()&os.ModeDir == os.ModeDir:
+				hash, size = addDir(p, fi)
+				//fmt.Printf("addDir: dir=%q, hash=0x%016x\n", p, hash)
+			case fi.Mode()&os.ModeType == 0:
+				if fi.Size() > threshold {
+					hash = readPartialHash(p, fi)
+					cnt++
+					size += fi.Size()
+				}
+				//fmt.Printf("addDir: file=%q, hash=0x%016x\n", p, hash)
+			default:
+				continue
+			}
+			gh.Write64(hash)
+			sizes += size
+		}
+	}
+	hashes := gh.Sum64()
+	//fmt.Printf("addDir: path=%q hash=0x%016x\n", path, hashes)
+
+	if cnt > 0 {
+		k1 := kfe{path, sizes, hashes}
+		_, ok := hmap[hashes]
+		if !ok {
+			hmap[hashes] = []kfe{k1}
+		} else {
+			hmap[hashes] = append(hmap[hashes], k1)
+		}
+		return hashes, size
+	}
+	return 0, 0
+}
+
+
 func main() {
-	fmt.Printf("dedup\n")
+	var hash uint64
+	var size int64
+	var wereDirs = false
+
+    flag.Var(&_threshold, "t", "threshhold")
+	//fmt.Printf("dedup\n")
 	flag.Parse()
+	threshold = int64(_threshold.V)
+	fmt.Printf("threshold=%d\n", threshold)
 	if len(flag.Args()) != 0 {
 		for _, dir := range flag.Args() {
 			fi, err := os.Stat(dir)
@@ -117,13 +218,25 @@ func main() {
 				panic("bad")
 			}
 			path := ""
-			idx := strings.LastIndex(dir, "/")
-			if idx != -1 {
-				path = dir[0:idx]
+			switch {
+			case fi.Mode()&os.ModeDir == os.ModeDir:
+				idx := strings.LastIndex(dir, "/")
+				if idx != -1 {
+					path = dir[0:idx]
+				}
+				fis := []os.FileInfo{fi}
+				if *dirf {
+					hash, size = addDir(dir, fi)
+					wereDirs = true
+				} else {
+					addDirs(path, fis)
+					wereDirs = true
+				}
+			case fi.Mode()&os.ModeType == 0:
+				hash = readPartialHash(path, fi)
+				fmt.Printf("0x%016x %q\n", hash, dir)
+				//fmt.Printf("addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
 			}
-			fis := []os.FileInfo{fi}
-			addDirs(path, fis)
-//			dirs := []string{dir}
 		}
 	}
 /*
@@ -136,12 +249,23 @@ func main() {
 		}
 	}
 */
-	for k, v := range hmap {
-		if len(v) > 1 {
-			fmt.Printf("0x%016x\n", k)
-			for _, v2 := range v {
-				fmt.Printf("\t%q\n", v2.path)
+	fmt.Printf("hash=0x%016x, files totaling %h\n", hash, hrff.Int64{size, "B"})
+	if wereDirs {
+		for k, v := range hmap {
+			if len(v) > 1 {
+				fmt.Printf("0x%016x ", k)
+				for k2, v2 := range v {
+					size := hrff.Int64{v2.size, "B"}
+					if k2 == 0 {
+						fmt.Printf("%d %h\n", v2.size, size)	
+					} else {
+						total += v2.size
+						count++
+					}
+					fmt.Printf("\t%q\n", v2.path)
+				}
 			}
 		}
+		fmt.Printf("%d duplicated files totaling %h\n", count, hrff.Int64{total, "B"})
 	}
 }
