@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"regexp"
 	"leb.io/hrff"
 	_ "github.com/tildeleb/hashland/jenkins"
 	"github.com/tildeleb/hashland/aeshash"
@@ -16,8 +18,20 @@ type kfe struct {
 	hash uint64
 }
 
+type stat struct {
+	files int64
+	dirs int64
+}
+var stats stat
+
+var ddre *regexp.Regexp
+var patre *regexp.Regexp
+
 var blockSize = flag.Int64("b", 8192, "block size")
 var dirf = flag.Bool("d", false, "hash dirs")
+var pat = flag.String("pat", "", "regexp pattern to match filenames")
+var dd = flag.String("dd", "", "do not descend past dirs named this")
+var print = flag.Bool("p", false, "print duplicated dirs or files")
 
 var _threshold hrff.Int64
 var threshold int64
@@ -37,7 +51,7 @@ func fullName(path string, fi os.FileInfo) string {
 }
 
 func readPartialHash(path string, fi os.FileInfo) uint64 {
-	//p := fullName(path, fi)
+	p := fullName(path, fi)
 	//fmt.Printf("readPartialHash: path=%q fi.Name=%q, p=%q\n", path, fi.Name(), p)
 	if fi.Size() == 0 {
 		return 0
@@ -46,19 +60,30 @@ func readPartialHash(path string, fi os.FileInfo) uint64 {
 	var half = *blockSize/2
 	buf := make([]byte, *blockSize)
 
-	f, err := os.Open(path)
+	f, err := os.Open(p)
 	if err != nil {
 		panic("readPartialHash: Open")
 	}
 	l := 0
 	if fi.Size() <= *blockSize {
 		l, _ = f.Read(buf)
+		if err != nil {
+		    log.Fatal(err)
+		}
 	} else {
-		l, _ = f.Read(buf[0:half])
+		l, err = f.Read(buf[0:half])
+		if err != nil {
+		    log.Fatal(err)
+		}
 	    _, _ = f.Seek(-half, os.SEEK_END)
 		l2, _ := f.Read(buf[half:])
-		l += l2
-		if l != int(*blockSize) {
+		if err != nil {
+		    log.Fatal(err)
+		}
+		lt := l + l2
+		if lt != int(*blockSize) {
+			fmt.Printf("blocksSize=%d, half=%d\n", *blockSize, half)
+			fmt.Printf("f=%q, size=%d, l=%d, l2=%d, lt=%d\n", fi.Name(), fi.Size(), l, l2, lt)
 			panic("readPartialHash: blockSize")
 		}
 	}
@@ -72,6 +97,13 @@ func readPartialHash(path string, fi os.FileInfo) uint64 {
 }
 
 func addFile(path string, fi os.FileInfo) {
+	if *pat != "" {
+		b := patre.MatchString(fi.Name())
+		if !b {
+			return
+		}
+	}
+	//fmt.Printf("addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
 	p := fullName(path, fi)
 	k1 := kfe{p, fi.Size(), 0}
 
@@ -121,6 +153,14 @@ func addDirs(path string, fis []os.FileInfo) {
 		//fmt.Printf("addDirs: fi.Name=%q\n", fi.Name())
 		switch {
 		case fi.Mode()&os.ModeDir == os.ModeDir:
+			stats.dirs++
+			if *dd != "" {
+				b := ddre.MatchString(fi.Name())
+				if b {
+					//fmt.Printf("addDirs: skip dir=%q\n", fi.Name())
+					continue
+				}
+			}
 			p := fullName(path, fi)
 			//fmt.Printf("addDirs: dir=%q\n", p)
 			d, err := os.Open(p)
@@ -135,6 +175,7 @@ func addDirs(path string, fis []os.FileInfo) {
 			d.Close()
 			addDirs(p, fis)
 		case fi.Mode()&os.ModeType == 0:
+			stats.files++
 			//fmt.Printf("addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
 			addFile(path, fi)
 		default:
@@ -142,6 +183,8 @@ func addDirs(path string, fis []os.FileInfo) {
 		}
 	}
 }
+
+var sortMap = make([]*kfe, 0)
 
 func addDir(path string, fi os.FileInfo) (uint64, int64) {
 	var gh = aeshash.NewAES(0)
@@ -169,10 +212,11 @@ func addDir(path string, fi os.FileInfo) (uint64, int64) {
 			switch {
 			case fi.Mode()&os.ModeDir == os.ModeDir:
 				hash, size = addDir(p, fi)
-				//fmt.Printf("addDir: dir=%q, hash=0x%016x\n", p, hash)
+				//fmt.Printf("addDir: dir=%q, hash=0x%016x, size=%d\n", p, hash, size)
+				cnt++
 			case fi.Mode()&os.ModeType == 0:
 				if fi.Size() > threshold {
-					hash = readPartialHash(p, fi)
+					hash = readPartialHash(path, fi)
 					cnt++
 					size += fi.Size()
 				}
@@ -185,17 +229,18 @@ func addDir(path string, fi os.FileInfo) (uint64, int64) {
 		}
 	}
 	hashes := gh.Sum64()
-	//fmt.Printf("addDir: path=%q hash=0x%016x\n", path, hashes)
+	//fmt.Printf("addDir: path=%q hash=0x%016x, size=%d\n", path, hashes, sizes)
 
 	if cnt > 0 {
 		k1 := kfe{path, sizes, hashes}
+		sortMap = append(sortMap, &k1)
 		_, ok := hmap[hashes]
 		if !ok {
 			hmap[hashes] = []kfe{k1}
 		} else {
 			hmap[hashes] = append(hmap[hashes], k1)
 		}
-		return hashes, size
+		return hashes, sizes
 	}
 	return 0, 0
 }
@@ -209,6 +254,20 @@ func main() {
     flag.Var(&_threshold, "t", "threshhold")
 	//fmt.Printf("dedup\n")
 	flag.Parse()
+	if *pat != "" {
+		re, err := regexp.Compile(*pat)
+		if err != nil {
+			return
+		}
+		patre = re
+	}
+	if *dd != "" {
+		re, err := regexp.Compile(*dd)
+		if err != nil {
+			return
+		}
+		ddre = re
+	}
 	threshold = int64(_threshold.V)
 	fmt.Printf("threshold=%d\n", threshold)
 	if len(flag.Args()) != 0 {
@@ -237,6 +296,9 @@ func main() {
 				fmt.Printf("0x%016x %q\n", hash, dir)
 				//fmt.Printf("addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
 			}
+			if *dirf {
+				fmt.Printf("# dir=%q, hash=0x%016x, files totaling %h\n", dir, hash, hrff.Int64{size, "B"})
+			}
 		}
 	}
 /*
@@ -249,23 +311,28 @@ func main() {
 		}
 	}
 */
-	fmt.Printf("hash=0x%016x, files totaling %h\n", hash, hrff.Int64{size, "B"})
+
 	if wereDirs {
 		for k, v := range hmap {
 			if len(v) > 1 {
-				fmt.Printf("0x%016x ", k)
+				if *print {
+					fmt.Printf("0x%016x ", k)
+				}
 				for k2, v2 := range v {
 					size := hrff.Int64{v2.size, "B"}
-					if k2 == 0 {
+					if k2 == 0 && *print {
 						fmt.Printf("%d %h\n", v2.size, size)	
 					} else {
 						total += v2.size
 						count++
 					}
-					fmt.Printf("\t%q\n", v2.path)
+					if *print {
+						fmt.Printf("\t%q\n", v2.path)
+					}
 				}
 			}
 		}
-		fmt.Printf("%d duplicated files totaling %h\n", count, hrff.Int64{total, "B"})
+		fmt.Printf("# %d duplicated files totaling %h\n", count, hrff.Int64{total, "B"})
+		fmt.Printf("# %d files, %d dirs scanned\n", stats.files, stats.dirs)
 	}
 }

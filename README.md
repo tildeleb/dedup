@@ -1,7 +1,11 @@
 dedup
 =====
-Scan directories and identify duplicate files by size and/or hash.
+*original written in about an hour on plane from SFO->EWR 7-23-15*
 
-First cut, not much error checking and no flags at this point.
+Scan directories and identify duplicate directories or files by hash with qualifying name or size threshold.
 
-**written in about an hour on plane from SFO->EWR 7-23-15**
+For speed large files only have the beginning and end hashed.
+
+First cut, not much error checking, needs much work.
+
+
