@@ -3,13 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/tildeleb/hashland/aeshash"
+	_ "github.com/tildeleb/hashland/jenkins"
+	"leb.io/hrff"
 	"log"
 	"os"
-	"strings"
 	"regexp"
-	"leb.io/hrff"
-	_ "github.com/tildeleb/hashland/jenkins"
-	"github.com/tildeleb/hashland/aeshash"
+	"strings"
 )
 
 type kfe struct {
@@ -20,8 +20,9 @@ type kfe struct {
 
 type stat struct {
 	files int64
-	dirs int64
+	dirs  int64
 }
+
 var stats stat
 
 var ddre *regexp.Regexp
@@ -45,7 +46,7 @@ func fullName(path string, fi os.FileInfo) string {
 	if path == "" {
 		p = fi.Name()
 	} else {
-		p = path + "/" + fi.Name()		
+		p = path + "/" + fi.Name()
 	}
 	return p
 }
@@ -57,7 +58,7 @@ func readPartialHash(path string, fi os.FileInfo) uint64 {
 		return 0
 	}
 	//h := jenkins.New364(0)
-	var half = *blockSize/2
+	var half = *blockSize / 2
 	buf := make([]byte, *blockSize)
 
 	f, err := os.Open(p)
@@ -68,17 +69,17 @@ func readPartialHash(path string, fi os.FileInfo) uint64 {
 	if fi.Size() <= *blockSize {
 		l, _ = f.Read(buf)
 		if err != nil {
-		    log.Fatal(err)
+			log.Fatal(err)
 		}
 	} else {
 		l, err = f.Read(buf[0:half])
 		if err != nil {
-		    log.Fatal(err)
+			log.Fatal(err)
 		}
-	    _, _ = f.Seek(-half, os.SEEK_END)
+		_, _ = f.Seek(-half, os.SEEK_END)
 		l2, _ := f.Read(buf[half:])
 		if err != nil {
-		    log.Fatal(err)
+			log.Fatal(err)
 		}
 		lt := l + l2
 		if lt != int(*blockSize) {
@@ -97,20 +98,14 @@ func readPartialHash(path string, fi os.FileInfo) uint64 {
 }
 
 func addFile(path string, fi os.FileInfo) {
-	if *pat != "" {
-		b := patre.MatchString(fi.Name())
-		if !b {
-			return
-		}
-	}
-	//fmt.Printf("addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
 	p := fullName(path, fi)
+	//fmt.Printf("addFile: path=%q, fi.Name()=%q, p=%q\n", path, fi.Name(), p)
 	k1 := kfe{p, fi.Size(), 0}
 
 	skey := fi.Size()
 	// 0 length files are currently silently ignored
 	// they are not identical
-	if (skey > threshold) {
+	if skey > threshold {
 		hkey := uint64(readPartialHash(path, fi))
 		_, ok := hmap[hkey]
 		if !ok {
@@ -245,13 +240,61 @@ func addDir(path string, fi os.FileInfo) (uint64, int64) {
 	return 0, 0
 }
 
+func descend(path string, fis []os.FileInfo, ffp func(path string, fis os.FileInfo), dfp func(path string, fis os.FileInfo)) {
+	var des func(path string, fis []os.FileInfo)
+	des = func(path string, fis []os.FileInfo) {
+		//fmt.Printf("addDirs: path=%q\n", path)
+		for _, fi := range fis {
+			//fmt.Printf("addDirs: fi.Name=%q\n", fi.Name())
+			switch {
+			case fi.Mode()&os.ModeDir == os.ModeDir:
+				stats.dirs++
+				if *dd != "" {
+					b := ddre.MatchString(fi.Name())
+					if b {
+						//fmt.Printf("addDirs: skip dir=%q\n", fi.Name())
+						continue
+					}
+				}
+				if dfp != nil {
+					dfp(path, fi)
+				}
+				p := fullName(path, fi)
+				//fmt.Printf("addDirs: dir=%q\n", p)
+				d, err := os.Open(p)
+				if err != nil {
+					continue
+				}
+				fis, err := d.Readdir(-1)
+				if err != nil || fis == nil {
+					fmt.Printf("addDirs: can't read %q\n", fullName(path, fi))
+					continue
+				}
+				d.Close()
+				des(p, fis)
+			case fi.Mode()&os.ModeType == 0:
+				if *pat != "" {
+					b := patre.MatchString(fi.Name())
+					if b && ffp != nil {
+						ffp(path, fi)
+					}
+				}
+				stats.files++
+				//fmt.Printf("addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
+			default:
+				continue
+			}
+		}
+	}
+	des(path, fis)
+}
 
 func main() {
 	var hash uint64
 	var size int64
 	var wereDirs = false
 
-    flag.Var(&_threshold, "t", "threshhold")
+	flag.Var(&_threshold, "t", "threshhold")
 	//fmt.Printf("dedup\n")
 	flag.Parse()
 	if *pat != "" {
@@ -274,6 +317,7 @@ func main() {
 		for _, dir := range flag.Args() {
 			fi, err := os.Stat(dir)
 			if err != nil || fi == nil {
+				fmt.Printf("fi=%#v, err=%v\n", fi, err)
 				panic("bad")
 			}
 			path := ""
@@ -288,7 +332,8 @@ func main() {
 					hash, size = addDir(dir, fi)
 					wereDirs = true
 				} else {
-					addDirs(path, fis)
+					//addDirs(path, fis)
+					descend(path, fis, addFile, nil)
 					wereDirs = true
 				}
 			case fi.Mode()&os.ModeType == 0:
@@ -301,16 +346,16 @@ func main() {
 			}
 		}
 	}
-/*
-	for k, v := range smap {
-		if len(v) > 1 {
-			fmt.Printf("%d\n", k)
-			for _, v2 := range v {
-				fmt.Printf("\t%q\n", v2.path)
+	/*
+		for k, v := range smap {
+			if len(v) > 1 {
+				fmt.Printf("%d\n", k)
+				for _, v2 := range v {
+					fmt.Printf("\t%q\n", v2.path)
+				}
 			}
 		}
-	}
-*/
+	*/
 
 	if wereDirs {
 		for k, v := range hmap {
@@ -321,7 +366,7 @@ func main() {
 				for k2, v2 := range v {
 					size := hrff.Int64{v2.size, "B"}
 					if k2 == 0 && *print {
-						fmt.Printf("%d %h\n", v2.size, size)	
+						fmt.Printf("%d %h\n", v2.size, size)
 					} else {
 						total += v2.size
 						count++
