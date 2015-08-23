@@ -149,124 +149,6 @@ func addDir(path string, fi os.FileInfo, hash uint64, size int64) {
 	}
 }
 
-/*
-func hashDir(path string, fi os.FileInfo) {
-	p := fullName(path, fi)
-
-	//fmt.Printf("addDirs: dir=%q\n", p)
-	d, err := os.Open(p)
-	if err != nil {
-		continue
-	}
-	fis, err := d.Readdir(-1)
-	if err != nil || fis == nil {
-		fmt.Printf("addDirs: can't read %q\n", p)
-		continue
-	}
-	d.Close()
-	addDirs(p, fis)
-}
-
-
-func addDirs(path string, fis []os.FileInfo) {
-	//fmt.Printf("addDirs: path=%q\n", path)
-	for _, fi := range fis {
-		//fmt.Printf("addDirs: fi.Name=%q\n", fi.Name())
-		switch {
-		case fi.Mode()&os.ModeDir == os.ModeDir:
-			stats.scannedDirs++
-			if *dd != "" {
-				b := ddre.MatchString(fi.Name())
-				if b {
-					//fmt.Printf("addDirs: skip dir=%q\n", fi.Name())
-					continue
-				}
-			}
-			p := fullName(path, fi)
-			//fmt.Printf("addDirs: dir=%q\n", p)
-			d, err := os.Open(p)
-			if err != nil {
-				continue
-			}
-			fis, err := d.Readdir(-1)
-			if err != nil || fis == nil {
-				fmt.Printf("addDirs: can't read %q\n", fullName(path, fi))
-				continue
-			}
-			d.Close()
-			addDirs(p, fis)
-		case fi.Mode()&os.ModeType == 0:
-			stats.scannedFiles++
-			//fmt.Printf("addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
-			addFile(path, fi, 0, 0)
-		default:
-			continue
-		}
-	}
-}
-
-var sortMap = make([]*kfe, 0)
-
-func addDir(path string, fi os.FileInfo) (uint64, int64) {
-	var gh = aeshash.NewAES(0)
-	var hash uint64
-	var size, sizes int64
-	var cnt int
-
-	//fmt.Printf("addDir: path=%q\n", path)
-	if fi.Mode()&os.ModeDir == os.ModeDir {
-		d, err := os.Open(path)
-		if err != nil {
-			return 0, 0
-			fmt.Printf("addDir: path=%q\n", path)
-			panic("Open")
-		}
-		fis, err := d.Readdir(-1)
-		if err != nil || fis == nil {
-			//fmt.Printf("addDirs: can't read %q\n", fullName(path, fi))
-			panic("Readdir")
-		}
-		d.Close()
-		for _, fi := range fis {
-			p := fullName(path, fi)
-			//fmt.Printf("addDir: fi.Name=%q\n", fi.Name())
-			switch {
-			case fi.Mode()&os.ModeDir == os.ModeDir:
-				hash, size = addDir(p, fi) // wrong
-				//fmt.Printf("addDir: dir=%q, hash=0x%016x, size=%d\n", p, hash, size)
-				cnt++
-			case fi.Mode()&os.ModeType == 0:
-				if fi.Size() > threshold {
-					hash = readPartialHash(path, fi)
-					cnt++
-					size += fi.Size()
-				}
-				//fmt.Printf("addDir: file=%q, hash=0x%016x\n", p, hash)
-			default:
-				continue
-			}
-			gh.Write64(hash)
-			sizes += size
-		}
-	}
-	hashes := gh.Sum64()
-	//fmt.Printf("addDir: path=%q hash=0x%016x, size=%d\n", path, hashes, sizes)
-
-	if cnt > 0 {
-		k1 := kfe{path, sizes, hashes}
-		sortMap = append(sortMap, &k1)
-		_, ok := hmap[hashes]
-		if !ok {
-			hmap[hashes] = []kfe{k1}
-		} else {
-			hmap[hashes] = append(hmap[hashes], k1)
-		}
-		return hashes, sizes
-	}
-	return 0, 0
-}
-*/
-
 func descend(path string, fis []os.FileInfo,
 	ffp func(path string, fis os.FileInfo, hash uint64, size int64),
 	dfp func(path string, fis os.FileInfo, hash uint64, size int64)) (uint64, int64) {
@@ -332,28 +214,6 @@ func descend(path string, fis []os.FileInfo,
 	return des(path, fis)
 }
 
-/*
-func dirs(path string, fi os.FileInfo) {
-	//var gh = aeshash.NewAES(0)
-	var hash uint64
-	var size int64 // sizes
-	var cnt int
-
-	var addFile = func(path string, fi os.FileInfo) {
-		if fi.Size() > threshold {
-			hash = readPartialHash(path, fi)
-			cnt++
-			size += fi.Size()
-		}
-	}
-
-	//descend(path, fis, addFile, nil)
-	p := fullName(path, fi)
-	//fmt.Printf("addFile: path=%q, fi.Name()=%q, p=%q\n", path, fi.Name(), p)
-	k1 := kfe{p, fi.Size(), 0}
-}
-*/
-
 func main() {
 	var hash uint64
 	var size int64
@@ -413,16 +273,6 @@ func main() {
 			}
 		}
 	}
-	/*
-		for k, v := range smap {
-			if len(v) > 1 {
-				fmt.Printf("%d\n", k)
-				for _, v2 := range v {
-					fmt.Printf("\t%q\n", v2.path)
-				}
-			}
-		}
-	*/
 
 	for k, v := range hmap {
 		if len(v) > 1 {
