@@ -36,8 +36,10 @@ var pat = flag.String("pat", "", "regexp pattern to match filenames")
 var dd = flag.String("dd", "", "do not descend past dirs named this")
 var print = flag.Bool("p", false, "print duplicated dirs or files")
 
-var _threshold hrff.Int64
-var threshold int64
+var _fthreshold hrff.Int64
+var _dthreshold hrff.Int64
+var fthreshold int64
+var dthreshold int64
 var total int64
 var count int64
 var hmap = make(map[uint64][]kfe, 100)
@@ -116,17 +118,10 @@ func addFile(path string, fi os.FileInfo, hash uint64, size int64) {
 	skey := fi.Size()
 	// 0 length files are currently silently ignored
 	// they are not identical
-	if skey > threshold {
+	if skey > fthreshold {
 		hkey := uint64(readPartialHash(path, fi))
 		add(hkey, skey, &k1)
-		/*
-			_, ok := hmap[hkey]
-			if !ok {
-				hmap[hkey] = []kfe{k1}
-			} else {
-				hmap[hkey] = append(hmap[hkey], k1)
-			}
-		*/
+		// smap not used
 		_, ok2 := smap[skey]
 		if !ok2 {
 			smap[skey] = []kfe{k1}
@@ -137,26 +132,23 @@ func addFile(path string, fi os.FileInfo, hash uint64, size int64) {
 }
 
 func addDir(path string, fi os.FileInfo, hash uint64, size int64) {
+	if size <= dthreshold {
+		return // should dirs respect threshold or is it only for files?
+	}
 	p := fullName(path, fi)
 	//fmt.Printf("addDir: path=%q, fi.Name()=%q, p=%q, size=%d, hash=0x%016x\n", path, fi.Name(), p, size, hash)
 	k1 := kfe{p, size, hash}
-
-	_, ok := hmap[hash]
-	if !ok {
-		hmap[hash] = []kfe{k1}
-	} else {
-		hmap[hash] = append(hmap[hash], k1)
-	}
+	add(hash, size, &k1)
 }
 
 func descend(path string, fis []os.FileInfo,
 	ffp func(path string, fis os.FileInfo, hash uint64, size int64),
 	dfp func(path string, fis os.FileInfo, hash uint64, size int64)) (uint64, int64) {
-	var hash uint64
-	var size, sizes int64
 
 	var des func(path string, fis []os.FileInfo) (uint64, int64)
 	des = func(path string, fis []os.FileInfo) (uint64, int64) {
+		var hash uint64
+		var size, sizes int64
 		var gh = aeshash.NewAES(0)
 
 		for _, fi := range fis {
@@ -187,15 +179,16 @@ func descend(path string, fis []os.FileInfo,
 				hash = h
 				gh.Write64(hash)
 				sizes += size
+				//fmt.Printf("des: dir: path=%q, fi.Name()=%q, sizes=%d\n", path, fi.Name(), sizes)
 				stats.matchedDirs++
 				if dfp != nil {
 					dfp(path, fi, hash, size)
 				}
 			case fi.Mode()&os.ModeType == 0:
-				//fmt.Printf("des: addFile: path=%q, fi.Name()=%q\n", path, fi.Name())
 				stats.scannedFiles++
 				sizes += fi.Size()
-				if fi.Size() > threshold && (*pat == "" || (*pat != "" && patre.MatchString(fi.Name()))) {
+				//fmt.Printf("des: file: path=%q, fi.Name()=%q, sizes=%d\n", path, fi.Name(), sizes)
+				if fi.Size() > fthreshold && (*pat == "" || (*pat != "" && patre.MatchString(fi.Name()))) {
 					hash = readPartialHash(path, fi)
 					gh.Write64(hash)
 					stats.matchedFiles++
@@ -208,6 +201,7 @@ func descend(path string, fis []os.FileInfo,
 			}
 		}
 		hashes := gh.Sum64()
+		//fmt.Printf("dir=%q, size=%d\n", path, sizes)
 		return hashes, sizes
 	}
 	//fmt.Printf("des: path=%q\n", path)
@@ -219,7 +213,8 @@ func main() {
 	var size int64
 	var kind = ""
 
-	flag.Var(&_threshold, "t", "threshhold")
+	flag.Var(&_fthreshold, "ft", "file sizes <= threshhold will not be considered")
+	flag.Var(&_dthreshold, "dt", "directory sizes <= threshhold will not be considered")
 	//fmt.Printf("dedup\n")
 	flag.Parse()
 	if *pat != "" {
@@ -236,8 +231,10 @@ func main() {
 		}
 		ddre = re
 	}
-	threshold = int64(_threshold.V)
-	//fmt.Printf("threshold=%d\n", threshold)
+	fthreshold = int64(_fthreshold.V)
+	dthreshold = int64(_dthreshold.V)
+	//fmt.Printf("fthreshold=%d\n", fthreshold)
+	//fmt.Printf("dthreshold=%d\n", dthreshold)
 	if len(flag.Args()) != 0 {
 		for _, dir := range flag.Args() {
 			fi, err := os.Stat(dir)
