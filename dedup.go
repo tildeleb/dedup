@@ -208,7 +208,7 @@ func addDir(path string, fi os.FileInfo, hash uint64, size int64) {
 		return // should dirs respect threshold or is it only for files?
 	}
 	p := fullName(path, fi)
-	fmt.Printf("addDir: path=%q, fi.Name()=%q, p=%q, size=%d, hash=0x%016x\n", path, fi.Name(), p, size, hash)
+	//fmt.Printf("addDir: path=%q, fi.Name()=%q, p=%q, size=%d, hash=0x%016x\n", path, fi.Name(), p, size, hash)
 	k1 := kfe{p, size, hash}
 	add(hash, size, &k1)
 }
@@ -305,7 +305,7 @@ func scan(paths []string, ndirs int) {
 			if *dirf {
 				//hash, size = addDir(dir, fi)
 				hash, size = descend(prefix, fis, nil, addDir)
-				fmt.Printf("scan: add hash=0x%016x, path=%q, fi.Name()=%q\n", hash, prefix, fi.Name())
+				//fmt.Printf("scan: add hash=0x%016x, path=%q, fi.Name()=%q\n", hash, prefix, fi.Name())
 				add(hash, size, &kfe{prefix, size, hash})
 			} else {
 				//addDirs(path, fis)

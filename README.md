@@ -5,7 +5,9 @@ Copyright © 2014,2015, 2016 Lawrence E. Bakst. All rights reserved.
 Summary
 -------
 
-Dedup identifies duplicate directories or files by constructing hash fingerprints. The default scan is for duplicate files but `-d` will scan for duplicate directories.
+Dedup identifies duplicate or missing directories or files by constructing hash fingerprints of files and directories. The default scan is for duplicate files but `-d` will scan for duplicate directories.
+
+Missing files can be found with the -r switch.
 
 The directory search can be clipped by specifying a directory name with the `-dd` option. On a Mac the directory "Resources" is often a good choice.
 
@@ -45,9 +47,13 @@ If the -r switch is supplied, when the map is scanned, any slices with a length 
 
 Examples
 --------
+	dedup -p d1 d2
+	dedup -p -d d1 d2
+	dedup -r -p -d d1 d2
 
 Output Format
 -------------
+Designed for easy parsing by standard tools, but still a work in progress.
 
 Notes
 -----
@@ -55,6 +61,6 @@ Notes
 
 * First cut, not much error checking, needs much work.
 
-* *Originaly written in about an hour on plane from SFO->EWR 7-23-15 based on an idea I had been mulling or years.*
+* *Originally written in about an hour on a plane from SFO->EWR, 7-23-15, and based on an idea I had been mulling for years.*
 
 
