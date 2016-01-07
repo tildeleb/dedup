@@ -1,17 +1,22 @@
-// Copyright © 2014,2015 Lawrence E. Bakst. All rights reserved.
-package main
+// Copyright © 2014,2015, 2016 Lawrence E. Bakst. All rights reserved.
 
-// dedup scans directories and/or files. Without the -d (directory) switch dedup scans the supplied
-// directories and records the hash of each of file in a map of slices keyed by the hash. After the
-// scan the map is scanned and if any of the slices have a length of more than 1, then the files on
-// that slice are duplicates.
+// Originaly written on a plane from SFO->EWR in about an hour based on an idea I had been mulling
+// for years.
 //
-// If -d is supplied the hashes of files are themselves hashed recursively and the resulting hashes
-// of each directory are recorded in the map. Again, the length of any slice is more than 1 the entire
-// directory is duplicated.
+// dedup scans the supplied directories and/or files. Without the -d (directory) switch dedup
+// recursively scans the supplied directories in depth first order and records the hash of each
+// file in a map of slices keyed by the hash. After the scan is complete, the resulting map is
+// iterated and if any of the slices have a length of more than 1, then the files on
+// that slice are al duplicates.
 //
-// If the -r switch is supplied, when the map is scanned, any files with a length of 1 are printed.
-// This allows directories to be compared.
+// If -d swicth is supplied the hashes of files are themselves recursively hashed and the resulting
+// hashes of each directory are recorded in the map. Again, if the length of any slice is more than
+// 1 then the entire directory is duplicated.
+//
+// If the -r switch is supplied, when the map is scanned, any slices with a length different than the
+// number of supplied directores are printed as these represent missing files.
+// This allows directories to be easily compare and more than two can easily be compared.
+package main
 
 import (
 	"flag"
@@ -25,6 +30,10 @@ import (
 	"regexp"
 	"strings"
 )
+
+type PathReader interface {
+	PathRead(path string, fi os.FileInfo) (r uint64)
+}
 
 type kfe struct {
 	path string
@@ -52,6 +61,7 @@ var pat = flag.String("pat", "", "regexp pattern to match filenames")
 var dd = flag.String("dd", "", "do not descend past dirs named this")
 var print = flag.Bool("p", false, "print duplicated dirs or files")
 var ps = flag.Bool("ps", false, "print summary")
+var pd = flag.Bool("pd", false, "print duplicates with -r")
 
 var _fthreshold hrff.Int64
 var _dthreshold hrff.Int64
@@ -72,10 +82,6 @@ func fullName(path string, fi os.FileInfo) string {
 		p = path + "/" + fi.Name()
 	}
 	return p
-}
-
-type PathReader interface {
-	PathRead(path string, fi os.FileInfo) (r uint64)
 }
 
 func readFullHash(path string, fi os.FileInfo) (r uint64) {
@@ -323,7 +329,12 @@ func scan(paths []string, ndirs int) {
 func check(kind string, ndirs int) {
 	for k, v := range hmap {
 		switch {
-		case *r && len(v) != ndirs:
+		case *r && len(v) < ndirs && !*pd:
+			count++
+			if *print {
+				fmt.Printf("\t%q %d %d\n", v[0].path, len(v), ndirs)
+			}
+		case *r && len(v) > ndirs && *pd:
 			count++
 			if *print {
 				fmt.Printf("\t%q %d %d\n", v[0].path, len(v), ndirs)
