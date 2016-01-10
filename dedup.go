@@ -1,21 +1,22 @@
-// Copyright © 2014,2015, 2016 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2015-2016 Lawrence E. Bakst. All rights reserved.
 
-// Originaly written on a plane from SFO->EWR in about an hour based on an idea I had been mulling
-// for years.
+// Originaly written on a plane from SFO->EWR on 7-23-15 in about an hour.
+// Based on an idea I had been mulling in my mind for years.
 //
-// dedup scans the supplied directories and/or files. Without the -d (directory) switch dedup
-// recursively scans the supplied directories in depth first order and records the hash of each
-// file in a map of slices keyed by the hash. After the scan is complete, the resulting map is
-// iterated and if any of the slices have a length of more than 1, then the files on
-// that slice are al duplicates.
+// dedup scans files or directories and calculates fingerprints hashes for them based on their contents.
+
+// Without the -d (directory) switch dedup recursively scans the supplied directories in depth first
+// order and records the hash of each file in a map of slices keyed by the hash. After the scan is
+// complete, the resulting map is iterated and if any of the slices have a length of more than 1,
+// then the files on that slice are all duplicates of each other.
 //
 // If -d swicth is supplied the hashes of files are themselves recursively hashed and the resulting
-// hashes of each directory are recorded in the map. Again, if the length of any slice is more than
-// 1 then the entire directory is duplicated.
+// hashes of each directory (but not the files) are recorded in the map. Again, if the length of any
+// slice is more than 1 then the entire directory is duplicated.
 //
-// If the -r switch is supplied, when the map is scanned, any slices with a length different than the
-// number of supplied directores are printed as these represent missing files.
-// This allows directories to be easily compare and more than two can easily be compared.
+// If the -r switch is supplied, when the map is scanned, any slices with a length different than
+// the number of supplied directores are printed as these represent missing files. This allows
+// directories to be easily compared and more than two can easily be compared.
 package main
 
 import (
