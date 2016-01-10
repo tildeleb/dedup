@@ -4,7 +4,7 @@
 // Based on an idea I had been mulling in my mind for years.
 //
 // dedup scans files or directories and calculates fingerprints hashes for them based on their contents.
-
+//
 // Without the -d (directory) switch dedup recursively scans the supplied directories in depth first
 // order and records the hash of each file in a map of slices keyed by the hash. After the scan is
 // complete, the resulting map is iterated and if any of the slices have a length of more than 1,
