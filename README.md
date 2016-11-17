@@ -1,10 +1,10 @@
 dedup
 =====
-Copyright © 2014,2015, 2016 Lawrence E. Bakst. All rights reserved.
+Copyright © 2014,2015,2016 Lawrence E. Bakst. All rights reserved.  
+*currently has a few bugs which will be fixed soon*
 
 Summary
 -------
-
 Dedup identifies duplicate or missing directories or files by constructing hash fingerprints of files and directories. The default scan is for duplicate files but `-d` will scan for duplicate directories.
 
 Missing files can be found with the -r switch.
