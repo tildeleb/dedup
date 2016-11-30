@@ -1,13 +1,12 @@
 dedup
 =====
 Copyright © 2014, 2015, 2016 Lawrence E. Bakst. All rights reserved.  
-*currently has a few bugs which will be fixed soon*
 
 Summary
 -------
-Dedup identifies duplicate or missing directories or files by constructing hash fingerprints of files and directories. The default scan is for duplicate files but `-d` will scan for duplicate directories.
+Dedup identifies duplicated files or directories by constructing hash fingerprints of their contents. The default scan finds duplicated files but `-d` will scan for duplicated directories. Using `-r	` reversed the sense of the test and finds files or directories that are *not* duplicated.
 
-Other options exist to cull the size of files examined, limit the depth of the recursive search, regular expression matching, sorting the results, and so on.
+Other options exist to cull the size of files examined, limit the depth of the recursive search, regular expression matching for files, sorting the results, and so on.
 
 The directory search can be clipped by specifying a directory name with the `-dd` option. For example, on a Mac, the directory "Resources" is often a good choice.
 
@@ -17,16 +16,8 @@ N.B. that because`-dt` will cull files it affects the fingerprints generated for
 
 *The first version of this program was originally written on a plane from SFO->EWR on 7-23-15 in about an hour and was based on an idea I had been mulling in my mind for years. Dedup scans files or directories and calculates fingerprint hashes based on their contents and identifies duplicated or uniques files or directories.*
 
-
-Implementation
---------------
-dedup scans the supplied directories and/or files.
-
-Without the -d (directory) switch dedup recursively scans the supplied directories in depth first order and records the hash of each file in a map of slices keyed by the hash. After the scan is complete, the resulting map is iterated, and if any of the slices have a length of more than one, then the files on that slice are all duplicates of each other.
-
-With the -d switch the supplied directories are recursively scanned and the fingerprint hashes of each directory are calculated from their files and directories and recorded in the map. Again, if the length of any slice is more than one then the entire directory is duplicated.
-
-If the -r switch is supplied, the sense of the test is reversed and files that are not duplicated are recorded and optionally printed. Useful when you want to know which files haven't been backed up. Missing files can be found with the -r switch.
+Usage
+-----
 
 	Usage of ./dedup:
 	  -b int
@@ -69,13 +60,19 @@ Output Format
 
 With the `-p` flag for each set of duplicated files the hash is printed and the file size followed by each pathname on separate lines.
 
+Implementation
+--------------
+dedup scans the supplied directories and/or files.
 
+Without the -d (directory) switch dedup recursively scans the supplied directories in depth first order and records the hash of each file in a map of slices keyed by the hash. After the scan is complete, the resulting map is iterated, and if any of the slices have a length of more than one, then the files on that slice are all duplicates of each other.
+
+With the -d switch the supplied directories are recursively scanned and the fingerprint hashes of each directory are calculated from their files and directories and recorded in the map. Again, if the length of any slice is more than one then the entire directory is duplicated.
+
+If the -r switch is supplied, the sense of the test is reversed and files that are not duplicated are recorded and optionally printed. Useful when you want to know which files haven't been backed up. Missing files can be found with the -r switch.
 
 Notes
 -----
 * For speed, only partial sections of large files are read and hashed.
-
-
 * *Originally written in about an hour on a plane from SFO->EWR, 7-23-15, and based on an idea I had been mulling for years.*
 
 
