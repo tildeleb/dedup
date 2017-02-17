@@ -29,9 +29,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/tildeleb/hashland/aeshash"
-	_ "github.com/tildeleb/hashland/jenkins"
 	"hash"
+	"leb.io/aeshash"
+	_ "leb.io/hashland/jenkins"
 	"leb.io/hrff"
 	"log"
 	"os"
