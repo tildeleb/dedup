@@ -1,4 +1,4 @@
-// Copyright © 2015-2016 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2015-2017 Lawrence E. Bakst. All rights reserved.
 
 // Originaly written on a plane from SFO->EWR on 7-23-15 in about an hour.
 // Based on an idea I had been mulling in my mind for years.
@@ -420,13 +420,13 @@ func asort() {
 }
 
 func match(kind string, ndirs int) {
-	//fmt.Printf("check: len(hmap)=%d\n", len(hmap))
+	//fmt.Printf("check: kind=%q, ndirs=%d, len(hmap)=%d\n", kind, ndirs, len(hmap))
 	for k, v := range hmap {
-		//fmt.Printf("check:\t%q %d %d\n", v[0].path, len(v), ndirs)
+		//fmt.Printf("check:\t%q %d %d, %#x %#x\n", v[0].path, len(v), ndirs, k, *fp)
 		if k == *fp {
-			fmt.Printf("\t%q %d\n", v[0].path, len(v))
+			fmt.Printf("%q %d\n", v[0].path, len(v))
 			for _, v2 := range v {
-				fmt.Printf("\t\t%q\n", v2.path)
+				fmt.Printf("\t%q\n", v2.path)
 			}
 		}
 	}
@@ -581,7 +581,6 @@ func main() {
 
 	scan(paths, ndirs)
 	if *fp != 0 {
-		fmt.Printf("Match\n")
 		match(kind, ndirs)
 		return
 	}
@@ -593,9 +592,3 @@ func main() {
 		check(kind, ndirs)
 	}
 }
-
-/*
-1. still a bug when comparing two dirs, there are two differnt top level hashses
-2. with -r what happens with duplicated files? The count will not be ndirs and can be higher. Could chnage compare
-   but what about 2 files in 2 dirs with a drop and an add would seem correct.
-*/
