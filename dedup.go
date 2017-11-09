@@ -1,9 +1,9 @@
 // Copyright © 2015-2017 Lawrence E. Bakst. All rights reserved.
 
+// dedup scans files or directories and calculates fingerprint hashes for them based on their contents.
+//
 // Originaly written on a plane from SFO->EWR on 7-23-15 in about an hour.
 // Based on an idea I had been mulling in my mind for years.
-//
-// dedup scans files or directories and calculates fingerprint hashes for them based on their contents.
 //
 // Without the -d (directory) switch dedup recursively scans the supplied directories in depth first
 // order and records the hash of each file in a map of slices keyed by the hash. After the scan is
@@ -13,6 +13,10 @@
 // If -d swicth is supplied the hashes of files are themselves recursively hashed and the resulting
 // hashes of each directory (but not the files) are recorded in the map. Again, if the length of any
 // slice is more than 1 then the entire directory is duplicated.
+//
+// The -p switch prints out the duplicate files or directories.
+// The -ps switch just prints a summary of how many files or directories were duplicated
+// and now much space they take up.
 //
 // If the -r switch is supplied, when the map is scanned, any slices with a length different than
 // the number of supplied directores are printed as these represent missing files. This allows
@@ -79,7 +83,7 @@ var fp = flag.Uint64("fp", 0, "fingerprint to search for.")
 var _fthreshold hrff.Int64
 var _dthreshold hrff.Int64
 var fthreshold int64
-var dthreshold int64
+var dthreshold int64 = -1
 
 var total int64
 var count int64
@@ -253,7 +257,7 @@ func addFile(path string, fi os.FileInfo, hash uint64, size int64) {
 }
 
 func addDir(path string, fi os.FileInfo, hash uint64, size int64) {
-	if size <= dthreshold {
+	if size > dthreshold {
 		return // should dirs respect threshold or is it only for files?
 	}
 	p := fullName(path, fi)
@@ -436,7 +440,7 @@ func match(kind string, ndirs int) {
 }
 
 func check(kind string, ndirs int) {
-	//fmt.Printf("check: len(hmap)=%d\n", len(hmap))
+	//fmt.Printf("check: kind=%q, ndirs=%d, len(hmap)=%d\n", kind, ndirs, len(hmap))
 	for k, v := range hmap {
 		//fmt.Printf("check:\t%q %d %d\n", v[0].path, len(v), ndirs)
 		switch {
