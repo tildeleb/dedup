@@ -74,6 +74,7 @@ var dd = flag.String("dd", "", "do not descend past dirs named this")
 var print = flag.Bool("p", false, "print duplicated dirs or files")
 var ps = flag.Bool("ps", false, "print summary")
 var pd = flag.Bool("pd", false, "print duplicates with -r")
+var fp = flag.Uint64("fp", 0, "fingerprint to search for.")
 
 var _fthreshold hrff.Int64
 var _dthreshold hrff.Int64
@@ -418,6 +419,22 @@ func asort() {
 	sort.Sort(indicies)
 }
 
+func match(kind string, ndirs int) {
+	//fmt.Printf("check: len(hmap)=%d\n", len(hmap))
+	for k, v := range hmap {
+		//fmt.Printf("check:\t%q %d %d\n", v[0].path, len(v), ndirs)
+		if k == *fp {
+			fmt.Printf("\t%q %d\n", v[0].path, len(v))
+			for _, v2 := range v {
+				fmt.Printf("\t\t%q\n", v2.path)
+			}
+		}
+	}
+	if *ps {
+		fmt.Printf("# %d files, %d dirs scanned\n", stats.scannedFiles, stats.scannedDirs)
+	}
+}
+
 func check(kind string, ndirs int) {
 	//fmt.Printf("check: len(hmap)=%d\n", len(hmap))
 	for k, v := range hmap {
@@ -563,6 +580,11 @@ func main() {
 	}
 
 	scan(paths, ndirs)
+	if *fp != 0 {
+		fmt.Printf("Match\n")
+		match(kind, ndirs)
+		return
+	}
 	if *s {
 		asort()
 		check2(kind, ndirs)
