@@ -54,6 +54,7 @@ type PathReader interface {
 }
 
 type kfe struct {
+	root int
 	path string
 	size int64
 	hash uint64
@@ -71,10 +72,16 @@ var stats stat
 var ddre *regexp.Regexp
 var patre *regexp.Regexp
 
-var blockSize = flag.Int64("b", 8192, "block size")
-var dirf = flag.Bool("d", false, "hash dirs")
-var h = flag.Bool("h", false, "human readable numbers")
-var r = flag.Bool("r", false, "reverse sense; record non duplicated files")
+var F = flag.Bool("F", false, "print fingerprint")
+var S = flag.Bool("S", false, "print size")
+var H = flag.Bool("H", false, "print human readable size")
+var L = flag.Bool("L", false, "print length of hash chain")
+var N = flag.Bool("N", false, "print number of roots")
+var l = flag.Int("l", 1, "print fingerprints with more than l entries on chain")
+
+var dirf = flag.Bool("d", false, "hash directories")
+var r = flag.Bool("r", false, "reverse sense; display non-duplicated files")
+
 var s = flag.Bool("s", false, "sort duplicate files by size from largest to smallest")
 var rs = flag.Bool("rs", false, "reverse sense of sort, smallest to largest")
 var fr = flag.Bool("fr", false, "full read; read the entire file")
@@ -85,6 +92,8 @@ var ps = flag.Bool("ps", false, "print summary")
 var pd = flag.Bool("pd", false, "print duplicates with -r")
 var fp = flag.Uint64("fp", 0, "fingerprint to search for.")
 
+var blockSize = flag.Int64("b", 8192, "block size")
+
 var _fthreshold hrff.Int64
 var _dthreshold hrff.Int64
 var fthreshold int64
@@ -94,6 +103,7 @@ var total int64
 var count int64
 var hmap = make(map[uint64][]kfe, 100)
 var smap = make(map[int64][]kfe, 100)
+var roots []string
 
 var ignoreList = []string{".Spotlight-V100", ".fseventsd"}
 
@@ -232,11 +242,11 @@ func add(hash uint64, size int64, k *kfe) {
 	}
 }
 
-func addFile(path string, fi os.FileInfo, hash uint64, size int64) {
+func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	p := fullName(path, fi)
 	//fmt.Printf("addFile: path=%q, fi.Name()=%q, hash=%#x, p=%q\n", path, fi.Name(), hash, p)
 	//fmt.Printf("addFile: hash=%016x, p=%q\n", hash, p)
-	k1 := kfe{p, fi.Size(), 0}
+	k1 := kfe{root, p, fi.Size(), 0}
 
 	skey := fi.Size()
 	// 0 length files are currently silently ignored
@@ -261,22 +271,22 @@ func addFile(path string, fi os.FileInfo, hash uint64, size int64) {
 	}
 }
 
-func addDir(path string, fi os.FileInfo, hash uint64, size int64) {
+func addDir(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	if size < dthreshold {
 		return // should dirs respect threshold or is it only for files?
 	}
 	p := fullName(path, fi)
 	//fmt.Printf("addDir: path=%q, fi.Name()=%q, p=%q, size=%d, hash=0x%016x\n", path, fi.Name(), p, size, hash)
-	k1 := kfe{p, size, hash}
+	k1 := kfe{root, p, size, hash}
 	add(hash, size, &k1)
 }
 
-func descend(path string, fis []os.FileInfo,
-	ffp func(path string, fis os.FileInfo, hash uint64, size int64),
-	dfp func(path string, fis os.FileInfo, hash uint64, size int64)) (uint64, int64) {
+func descend(root int, path string, fis []os.FileInfo,
+	ffp func(root int, path string, fis os.FileInfo, hash uint64, size int64),
+	dfp func(root int, path string, fis os.FileInfo, hash uint64, size int64)) (uint64, int64) {
 
-	var des func(path string, fis []os.FileInfo) (uint64, int64)
-	des = func(path string, fis []os.FileInfo) (uint64, int64) {
+	var des func(root int, path string, fis []os.FileInfo) (uint64, int64)
+	des = func(root int, path string, fis []os.FileInfo) (uint64, int64) {
 		var hash uint64
 		var size, sizes int64
 		var gh = aeshash.NewAES(0)
@@ -313,7 +323,7 @@ func descend(path string, fis []os.FileInfo,
 					continue
 				}
 				d.Close()
-				h, size := des(p, fis)
+				h, size := des(root, p, fis)
 				hash = h
 				gh.Write64(hash)
 				sizes += size
@@ -321,7 +331,7 @@ func descend(path string, fis []os.FileInfo,
 				stats.matchedDirs++
 				if dfp != nil {
 					//fmt.Printf("descend: dfp: path=%q, fi.Name()=%q, hash=0x%016x, size=%d\n", path, fi.Name(), hash, size)
-					dfp(path, fi, hash, size)
+					dfp(root, path, fi, hash, size)
 				}
 			case fi.Mode()&os.ModeType == 0:
 				stats.scannedFiles++
@@ -336,7 +346,7 @@ func descend(path string, fis []os.FileInfo,
 					stats.matchedFiles++
 					//fmt.Printf("descend: file: path=%q, fi.Name()=%q, hash=0x%016x, size=%d, sizes=%d\n", path, fi.Name(), hash, size, sizes)
 					if ffp != nil {
-						ffp(path, fi, hash, size)
+						ffp(root, path, fi, hash, size)
 					}
 				}
 			default:
@@ -348,14 +358,14 @@ func descend(path string, fis []os.FileInfo,
 		return hashes, sizes
 	}
 	//fmt.Printf("descend: path=%q\n", path)
-	return des(path, fis)
+	return des(root, path, fis)
 }
 
 func scan(paths []string, ndirs int) {
 	var hash uint64
 	var size int64
 
-	for _, path := range paths {
+	for k, path := range paths {
 		fi, err := os.Stat(path)
 		if err != nil || fi == nil {
 			fmt.Printf("fi=%#v, err=%v\n", fi, err)
@@ -371,11 +381,11 @@ func scan(paths []string, ndirs int) {
 			fis := []os.FileInfo{fi}
 			if *dirf {
 				//hash, size = addDir(dir, fi)
-				hash, size = descend(prefix, fis, nil, addDir)
+				hash, size = descend(k, prefix, fis, nil, addDir)
 				//add(hash, size, &kfe{prefix, size, hash})
 			} else {
 				//addDirs(path, fis)
-				hash, size = descend(prefix, fis, addFile, nil)
+				hash, size = descend(k, prefix, fis, addFile, nil)
 			}
 			//fmt.Printf("scan: dir  hash=0x%016x, path=%q, fi.Name()=%q\n\n", hash, prefix, fi.Name())
 		case fi.Mode()&os.ModeType == 0:
@@ -444,54 +454,80 @@ func match(kind string, ndirs int) {
 	}
 }
 
-func psiz(siz int64) (s string) {
-	size := hrff.Int64{siz, "B"}
-	if *h {
-		s = fmt.Sprintf("%h", size)
-	} else {
-		s = fmt.Sprintf("%d", siz)
+func printLine(hash uint64, length, ndirs int, siz int64, path string) {
+	if *F {
+		fmt.Printf("%016x ", hash)
 	}
-	return
+	if *S {
+		fmt.Printf("%d ", siz)
+	}
+	if *H {
+		size := hrff.Int64{siz, "B"}
+		s := fmt.Sprintf("%h", size)
+		fmt.Printf("%s ", s)
+	}
+	if *N {
+		fmt.Printf("%d ", ndirs)
+	}
+	if *L {
+		fmt.Printf("%d ", length)
+	}
+	fmt.Printf("%q\n", path)
+}
+
+func printEntry(k uint64, v []kfe, ndirs int) {
+	rootmask := uint64(0)
+	rootcnts := make([]int, len(roots))
+	mask := (uint64(1) << uint64(ndirs)) - 1
+	for _, v2 := range v {
+		rootmask |= 1 << uint64(v2.root)
+		rootcnts[v2.root]++
+	}
+	rone := true
+	for _, r := range rootcnts {
+		if r != 1 {
+			rone = false
+		}
+	}
+	//fmt.Printf("checkFiles: ndirs=%d, len(v)=%d, rootmask=%b, mask=%b, rootcnts=%v\n", ndirs, len(v), rootmask, mask, rootcnts)
+
+	switch {
+	case *r && (len(v) < ndirs || (mask != rootmask) || !rone) && !*pd:
+		for _, v2 := range v {
+			total += v2.size
+			count++
+			printLine(k, len(v), ndirs, v2.size, v2.path)
+		}
+		//fmt.Printf("missing rootmask=%b, mask=%b, rootcnts=%v\n", rootmask, mask, rootcnts)
+		if rootmask != mask {
+			//fmt.Printf("missing roots=%b, mask=%b\n", roots, mask)
+		}
+		fmt.Printf("\n")
+	case *r && len(v) > ndirs && *pd:
+		for _, v2 := range v {
+			total += v2.size
+			count++
+			printLine(k, len(v), ndirs, v2.size, v2.path)
+		}
+	case !*r:
+		if len(v) > 1 && *print {
+			for _, v2 := range v {
+				total += v2.size
+				count++
+				printLine(k, len(v), ndirs, v2.size, v2.path)
+			}
+			fmt.Printf("\n")
+		}
+	}
 }
 
 func check(kind string, ndirs int) {
 	//fmt.Printf("check: kind=%q, ndirs=%d, len(hmap)=%d\n", kind, ndirs, len(hmap))
 	for k, v := range hmap {
 		//fmt.Printf("check:\t%q %d %d\n", v[0].path, len(v), ndirs)
-		switch {
-		case *r && len(v) < ndirs && !*pd:
-			count++
-			if *print {
-				fmt.Printf("%016x %d %d %s %q\n", k, len(v), ndirs, psiz(v[0].size), v[0].path)
-			}
-		case *r && len(v) > ndirs && *pd:
-			count++
-			if *print {
-				fmt.Printf("%016x %d %d %s %q\n", k, len(v), ndirs, psiz(v[0].size), v[0].path)
-			}
-		case !*r && len(v) != ndirs:
-			if *print {
-				fmt.Printf("%016x %d %d %s ", k, len(v), ndirs, psiz(v[0].size))
-			}
-			if len(v) > 1 && *print {
-				fmt.Printf("\n")
-				for k2, v2 := range v {
-					if k2 == 0 && *print {
-						fmt.Printf("\t%q\n", v[0].path)
-					}
-					total += v2.size
-					count++
-					if *print {
-						fmt.Printf("\t%q\n", v2.path)
-					}
-				}
-			} else {
-				if *print {
-					fmt.Printf("%q\n", v[0].path)
-				}
-			}
-		}
+		printEntry(k, v, ndirs)
 	}
+
 	if *ps {
 		if *r {
 			fmt.Printf("# %d %s missing\n", count, kind)
@@ -502,42 +538,11 @@ func check(kind string, ndirs int) {
 	}
 }
 
-func check2(kind string, ndirs int) {
+func checks(kind string, ndirs int) {
 	//fmt.Printf("check2: len(indicies)=%d\n", len(indicies))
 	for _, vi := range indicies {
 		v := hmap[vi]
-		switch {
-		case *r && len(v) < ndirs && !*pd:
-			count++
-			if *print {
-				fmt.Printf("%016x %d %d %s %q\n", vi, len(v), ndirs, psiz(v[0].size), v[0].path)
-			}
-		case *r && len(v) > ndirs && *pd:
-			count++
-			if *print {
-				fmt.Printf("%016x %d %d %s %q\n", vi, len(v), ndirs, psiz(v[0].size), v[0].path)
-			}
-		case !*r && len(v) > 1:
-			if len(v) > 1 {
-				if *print {
-					fmt.Printf("%016x %d %d ", vi, len(v), ndirs)
-				}
-				for k2, v2 := range v {
-					if *print {
-						if k2 == 0 {
-							fmt.Printf("%s\n", psiz(v2.size))
-						} else {
-							// fmt.Printf("\t")
-						}
-					}
-					total += v2.size
-					count++
-					if *print {
-						fmt.Printf("\t%q\n", v2.path)
-					}
-				}
-			}
-		}
+		printEntry(vi, v, ndirs)
 	}
 	if *ps {
 		if *r {
@@ -552,7 +557,6 @@ func check2(kind string, ndirs int) {
 func main() {
 	var kind string = "files"
 	var ndirs, nfiles int
-	var paths []string
 
 	flag.Var(&_fthreshold, "ft", "file sizes <= threshhold will not be considered")
 	flag.Var(&_dthreshold, "dt", "directory sizes <= threshhold will not be considered")
@@ -582,8 +586,8 @@ func main() {
 	}
 
 	if len(flag.Args()) != 0 {
-		for _, path := range flag.Args() {
-			fi, err := os.Stat(path)
+		for _, root := range flag.Args() {
+			fi, err := os.Stat(root)
 			if err != nil || fi == nil {
 				fmt.Printf("fi=%#v, err=%v\n", fi, err)
 				panic("bad")
@@ -593,18 +597,18 @@ func main() {
 			} else {
 				nfiles++
 			}
-			paths = append(paths, path)
+			roots = append(roots, root)
 		}
 	}
 
-	scan(paths, ndirs)
+	scan(roots, ndirs)
 	if *fp != 0 {
 		match(kind, ndirs)
 		return
 	}
 	if *s {
 		asort()
-		check2(kind, ndirs)
+		checks(kind, ndirs)
 
 	} else {
 		check(kind, ndirs)
