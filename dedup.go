@@ -10,17 +10,22 @@
 // complete, the resulting map is iterated, and if any of the slices have a length of more than 1,
 // then the files on that slice are all duplicates of each other.
 //
-// If -d swicth is supplied the hashes of files are themselves recursively hashed and the resulting
-// hashes of each directory (but not the files) are recorded in the map. Again, if the length of any
-// slice is more than 1 then the entire directory is duplicated.
+// If -d swicth is supplied the hashes of files in each directory are themselves recursively hashed and
+// the resulting hashes of each directory (but not the files) are recorded in the map. Again, if the length
+// of any slice is more than 1 then the entire directory is duplicated.
 //
 // The -p switch prints out the duplicate files or directories.
 // The -ps switch just prints a summary of how many files or directories were duplicated
-// and now much space they take up.
+// and now much space they take up. Without a switch to print, no output is generated.
 //
-// If the -r switch is supplied, when the map is scanned, any slices with a length different than
+// If the -r switch is supplied, reverses the sense of the program and files or directories that
+// ARE NOT duplicated are printed. When the map is scanned, any slices with a length different than
 // the number of supplied directores are printed as these represent missing files. This allows
-// directories to be easily compared and more than two can easily be compared.
+// directories to be easily compared and more than two can easily be compared. Even cooler is that
+// the program works even if files or directories have been renamed.
+//
+// Exmaples
+// % dedup -p -h -s -ps ~/Desktop
 //
 // Implementation
 //
@@ -257,7 +262,7 @@ func addFile(path string, fi os.FileInfo, hash uint64, size int64) {
 }
 
 func addDir(path string, fi os.FileInfo, hash uint64, size int64) {
-	if size > dthreshold {
+	if size < dthreshold {
 		return // should dirs respect threshold or is it only for files?
 	}
 	p := fullName(path, fi)
@@ -439,6 +444,16 @@ func match(kind string, ndirs int) {
 	}
 }
 
+func psiz(siz int64) (s string) {
+	size := hrff.Int64{siz, "B"}
+	if *h {
+		s = fmt.Sprintf("%h", size)
+	} else {
+		s = fmt.Sprintf("%d", siz)
+	}
+	return
+}
+
 func check(kind string, ndirs int) {
 	//fmt.Printf("check: kind=%q, ndirs=%d, len(hmap)=%d\n", kind, ndirs, len(hmap))
 	for k, v := range hmap {
@@ -447,32 +462,32 @@ func check(kind string, ndirs int) {
 		case *r && len(v) < ndirs && !*pd:
 			count++
 			if *print {
-				fmt.Printf("\t%q %d %d\n", v[0].path, len(v), ndirs)
+				fmt.Printf("%016x %d %d %s %q\n", k, len(v), ndirs, psiz(v[0].size), v[0].path)
 			}
 		case *r && len(v) > ndirs && *pd:
 			count++
 			if *print {
-				fmt.Printf("\t%q %d %d\n", v[0].path, len(v), ndirs)
+				fmt.Printf("%016x %d %d %s %q\n", k, len(v), ndirs, psiz(v[0].size), v[0].path)
 			}
-		case !*r && len(v) > 1:
-			if len(v) > 1 {
-				if *print {
-					fmt.Printf("%016x ", k)
-				}
+		case !*r && len(v) != ndirs:
+			if *print {
+				fmt.Printf("%016x %d %d %s ", k, len(v), ndirs, psiz(v[0].size))
+			}
+			if len(v) > 1 && *print {
+				fmt.Printf("\n")
 				for k2, v2 := range v {
-					size := hrff.Int64{v2.size, "B"}
 					if k2 == 0 && *print {
-						if *h {
-							fmt.Printf("%h\n", size)
-						} else {
-							fmt.Printf("%d\n", size)
-						}
+						fmt.Printf("\t%q\n", v[0].path)
 					}
 					total += v2.size
 					count++
 					if *print {
 						fmt.Printf("\t%q\n", v2.path)
 					}
+				}
+			} else {
+				if *print {
+					fmt.Printf("%q\n", v[0].path)
 				}
 			}
 		}
@@ -495,25 +510,24 @@ func check2(kind string, ndirs int) {
 		case *r && len(v) < ndirs && !*pd:
 			count++
 			if *print {
-				fmt.Printf("\t%q %d %d\n", v[0].path, len(v), ndirs)
+				fmt.Printf("%016x %d %d %s %q\n", vi, len(v), ndirs, psiz(v[0].size), v[0].path)
 			}
 		case *r && len(v) > ndirs && *pd:
 			count++
 			if *print {
-				fmt.Printf("\t%q %d %d\n", v[0].path, len(v), ndirs)
+				fmt.Printf("%016x %d %d %s %q\n", vi, len(v), ndirs, psiz(v[0].size), v[0].path)
 			}
 		case !*r && len(v) > 1:
 			if len(v) > 1 {
 				if *print {
-					fmt.Printf("%016x ", vi)
+					fmt.Printf("%016x %d %d ", vi, len(v), ndirs)
 				}
 				for k2, v2 := range v {
-					size := hrff.Int64{v2.size, "B"}
-					if k2 == 0 && *print {
-						if *h {
-							fmt.Printf("%h\n", size)
+					if *print {
+						if k2 == 0 {
+							fmt.Printf("%s\n", psiz(v2.size))
 						} else {
-							fmt.Printf("%d\n", size)
+							// fmt.Printf("\t")
 						}
 					}
 					total += v2.size
