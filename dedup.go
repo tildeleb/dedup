@@ -14,7 +14,9 @@
 // the resulting hashes of each directory (but not the files) are recorded in the map. Again, if the length
 // of any slice is more than 1 then the entire directory is duplicated.
 //
-// The -p switch prints out the duplicate files or directories.
+// The program works with more than two directories, but sometimes not as well.
+//
+// The -p switch prints out the the requested information.
 // The -ps switch just prints a summary of how many files or directories were duplicated
 // and now much space they take up. Without a switch to print, no output is generated.
 //
@@ -25,8 +27,9 @@
 // the program works even if files or directories have been renamed.
 //
 // Exmaples
-// % dedup -p -h -s -ps ~/Desktop
-//
+// % dedup -p ~/Desktop
+// % dedup -d -p dir1 dir2
+// % dedup -d -r -p dir1 dir2
 // Implementation
 //
 // The hash used is the asehash from the Go runtime. It's fast and passes smhahser.
