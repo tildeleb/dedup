@@ -97,6 +97,8 @@ var fthreshold int64
 var dthreshold int64
 
 var roots []string // list of directories passed on the command line
+var files []string // list of files passed on the command line
+
 var hmap = make(map[uint64][]kfe, 100)
 var smap = make(map[int64][]kfe, 100)
 var hf hash.Hash64 = aeshash.NewAES(0)
@@ -231,6 +233,7 @@ func readPartialHash(path string, fi os.FileInfo) (r uint64) {
 	return
 }
 
+// add a kfe to the hash map. check for inline
 func add(hash uint64, size int64, k *kfe) {
 	//fmt.Printf("add: kfe=%v\n", k)
 	_, ok := hmap[hash]
@@ -349,44 +352,48 @@ func descend(root int, path string, fis []os.FileInfo,
 	return des(root, path, fis)
 }
 
-func scan(paths []string, ndirs int) {
+// scan the roots (dirs) and files passed on the command line and records their hashes in a map.
+func scan(roots []string, files []string) {
 	var hash uint64
 	var size int64
+	var s = [](*[]string){&files, &roots}
 
-	for k, path := range paths {
-		fi, err := os.Stat(path)
-		if err != nil || fi == nil {
-			fmt.Printf("fi=%#v, err=%v\n", fi, err)
-			panic("bad")
-		}
-		prefix := ""
-		idx := strings.LastIndex(path, "/")
-		if idx != -1 {
-			prefix = path[0:idx]
-		}
-		switch {
-		case fi.Mode()&os.ModeDir == os.ModeDir:
-			fis := []os.FileInfo{fi}
-			if *dirf {
-				//hash, size = addDir(dir, fi)
-				hash, size = descend(k, prefix, fis, nil, addDir)
-				//add(hash, size, &kfe{prefix, size, hash})
-			} else {
-				//addDirs(path, fis)
-				hash, size = descend(k, prefix, fis, addFile, nil)
+	for _, fds := range s {
+		for k, path := range *fds {
+			fi, err := os.Stat(path)
+			if err != nil || fi == nil {
+				fmt.Printf("fi=%#v, err=%v\n", fi, err)
+				panic("bad")
 			}
-			//fmt.Printf("scan: dir  hash=0x%016x, path=%q, fi.Name()=%q\n\n", hash, prefix, fi.Name())
-		case fi.Mode()&os.ModeType == 0:
-			if *fr {
-				hash = readFullHash(prefix, fi)
-			} else {
-				hash = readPartialHash(prefix, fi)
+			prefix := ""
+			idx := strings.LastIndex(path, "/")
+			if idx != -1 {
+				prefix = path[0:idx]
 			}
-			fmt.Printf("%016x %q\n", hash, path)
-			//fmt.Printf("scan: file hash=0x%016x, path=%q, fi.Name()=%q\n\n", hash, path, fi.Name())
-		}
-		if *dirf && *ps {
-			fmt.Printf("# dir=%q, hash=0x%016x, files totaling %h\n", path, hash, hrff.Int64{size, "B"})
+			switch {
+			case fi.Mode()&os.ModeDir == os.ModeDir:
+				fis := []os.FileInfo{fi}
+				if *dirf {
+					//hash, size = addDir(dir, fi)
+					hash, size = descend(k, prefix, fis, nil, addDir)
+					//add(hash, size, &kfe{prefix, size, hash})
+				} else {
+					//addDirs(path, fis)
+					hash, size = descend(k, prefix, fis, addFile, nil)
+				}
+				//fmt.Printf("scan: dir  hash=0x%016x, path=%q, fi.Name()=%q\n\n", hash, prefix, fi.Name())
+			case fi.Mode()&os.ModeType == 0:
+				if *fr {
+					hash = readFullHash(prefix, fi)
+				} else {
+					hash = readPartialHash(prefix, fi)
+				}
+				fmt.Printf("%016x %q\n", hash, path)
+				//fmt.Printf("scan: file hash=0x%016x, path=%q, fi.Name()=%q\n\n", hash, path, fi.Name())
+			}
+			if *dirf && *ps {
+				fmt.Printf("# dir=%q, hash=0x%016x, files totaling %h\n", path, hash, hrff.Int64{size, "B"})
+			}
 		}
 	}
 }
@@ -463,13 +470,18 @@ func printLine(hash uint64, length, ndirs int, siz int64, path string) {
 	fmt.Printf("%q\n", path)
 }
 
-func printEntry(k uint64, v []kfe, ndirs int) {
-	rootmask := uint64(0)
+// check for inlined, better name for this
+// calcRootsMask calculates if each entry on the chain is on a different root
+// calculate the number of hashes on each root
+// return if the file doesn't exist on all roots and if the root counts aren't all one
+func calcRootsMask(kfes []kfe, ndirs int) (bool, bool) {
+	var rootmask uint64
+
 	rootcnts := make([]int, len(roots))
 	mask := (uint64(1) << uint64(ndirs)) - 1
-	for _, v2 := range v {
-		rootmask |= 1 << uint64(v2.root)
-		rootcnts[v2.root]++
+	for _, kfe := range kfes {
+		rootmask |= 1 << uint64(kfe.root)
+		rootcnts[kfe.root]++
 	}
 	rone := true
 	for _, r := range rootcnts {
@@ -477,10 +489,15 @@ func printEntry(k uint64, v []kfe, ndirs int) {
 			rone = false
 		}
 	}
-	//fmt.Printf("checkFiles: ndirs=%d, len(v)=%d, rootmask=%b, mask=%b, rootcnts=%v\n", ndirs, len(v), rootmask, mask, rootcnts)
-	//fmt.Printf("missing rootmask=%b, mask=%b, rootcnts=%v\n", rootmask, mask, rootcnts)
+	//fmt.Printf("calcRootsMask: ndirs=%d, len(v)=%d, rootmask=%b, mask=%b, rootcnts=%v\n", ndirs, len(v), rootmask, mask, rootcnts)
+	//fmt.Printf("calcRootsMask: rootmask=%b, mask=%b, rootcnts=%v, rone=%v\n", rootmask, mask, rootcnts, rone)
+	return mask != rootmask, rone
+}
+
+func printEntry(k uint64, v []kfe, ndirs int) {
+	neq, rone := calcRootsMask(v, ndirs)
 	switch {
-	case *r && (len(v) < ndirs || (mask != rootmask) || !rone) && !*pd:
+	case *r && (len(v) < ndirs || neq || !rone) && !*pd:
 		for _, v2 := range v {
 			total += v2.size
 			count++
@@ -565,22 +582,24 @@ func main() {
 	}
 
 	if len(flag.Args()) != 0 {
-		for _, root := range flag.Args() {
-			fi, err := os.Stat(root)
+		for _, arg := range flag.Args() {
+			fi, err := os.Stat(arg)
 			if err != nil || fi == nil {
 				fmt.Printf("directory=%#v, err=%v, skipped\n", fi, err)
 				continue
 			}
 			if fi.Mode()&os.ModeDir == os.ModeDir {
+				roots = append(roots, arg)
 				ndirs++
 			} else {
+				files = append(files, arg)
 				nfiles++
 			}
-			roots = append(roots, root)
 		}
 	}
 
-	scan(roots, ndirs)
+	scan(roots, files)
+
 	if *fp != 0 {
 		match(kind, ndirs)
 		return
