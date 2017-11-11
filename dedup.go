@@ -52,10 +52,9 @@ import (
 	"strings"
 )
 
-type PathReader interface {
-	PathRead(path string, fi os.FileInfo) (r uint64)
-}
-
+// One kfe is generated for each file or directory that is put into the hash map.
+// The hash map entries point here to one of these.
+// Space hasn't been an issue on my 0.5TB, 16 GB MacBook Pro.
 type kfe struct {
 	root int
 	path string
@@ -69,11 +68,6 @@ type stat struct {
 	matchedFiles int64
 	matchedDirs  int64
 }
-
-var stats stat
-
-var ddre *regexp.Regexp
-var patre *regexp.Regexp
 
 var F = flag.Bool("F", false, "print fingerprint")
 var S = flag.Bool("S", false, "print size")
@@ -108,6 +102,9 @@ var smap = make(map[int64][]kfe, 100)
 var hf hash.Hash64 = aeshash.NewAES(0)
 var zeroHash = zhash() // the null hash (no bytes passed)
 var ignoreList = []string{".Spotlight-V100", ".fseventsd"}
+var ddre *regexp.Regexp
+var patre *regexp.Regexp
+var stats stat
 var total int64
 var count int64
 
