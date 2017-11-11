@@ -14,7 +14,7 @@
 // the resulting hashes of each directory (but not the files) are recorded in the map. Again, if the length
 // of any slice is more than 1 then the entire directory is duplicated.
 //
-// The program works with more than two directories, but sometimes not as well.
+// The program works with more than two directories, but sometimes, not as well.
 //
 // The -p switch prints out the the requested information.
 // The -ps switch just prints a summary of how many files or directories were duplicated
@@ -30,7 +30,6 @@
 // % dedup -p ~/Desktop
 // % dedup -d -p dir1 dir2
 // % dedup -d -r -p dir1 dir2
-// Implementation
 //
 // The hash used is the asehash from the Go runtime. It's fast and passes smhahser.
 // The map of slices is not the most memory efficient representation and at some
@@ -158,9 +157,6 @@ func readFullHash(path string, fi os.FileInfo) (r uint64) {
 		panic("readFullHash: blockSize")
 	}
 	r = hf.Sum64()
-	//fmt.Printf("readFullHash: p=%q, r=%#016x\n", p, r)
-	//h.Write(buf[0:l])
-	//r = h.Sum64()
 	//fmt.Printf("readFullHash: file=%q, hash=0x%016x\n", p, r)
 	return r
 }
@@ -233,8 +229,6 @@ func readPartialHash(path string, fi os.FileInfo) (r uint64) {
 	}
 
 	r = aeshash.Hash(buf[0:lt], 0)
-	//h.Write(buf[0:l])
-	//r = h.Sum64()
 	//fmt.Printf("file=%q, hash=0x%016x\n", p, r)
 	return
 }
@@ -407,6 +401,8 @@ func (s KFESlice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 type Indices []uint64
 
+var indicies Indices
+
 func (idx Indices) Len() int { return len(idx) }
 
 //func (idx Indices) Less(i, j int) bool { return hmap[idx[i]][0].size > hmap[idx[j]][0].size }
@@ -419,8 +415,6 @@ func (idx Indices) Less(i, j int) bool {
 }
 
 func (idx Indices) Swap(i, j int) { idx[i], idx[j] = idx[j], idx[i] }
-
-var indicies Indices
 
 func asort() {
 	i := 0
@@ -486,17 +480,13 @@ func printEntry(k uint64, v []kfe, ndirs int) {
 		}
 	}
 	//fmt.Printf("checkFiles: ndirs=%d, len(v)=%d, rootmask=%b, mask=%b, rootcnts=%v\n", ndirs, len(v), rootmask, mask, rootcnts)
-
+	//fmt.Printf("missing rootmask=%b, mask=%b, rootcnts=%v\n", rootmask, mask, rootcnts)
 	switch {
 	case *r && (len(v) < ndirs || (mask != rootmask) || !rone) && !*pd:
 		for _, v2 := range v {
 			total += v2.size
 			count++
 			printLine(k, len(v), ndirs, v2.size, v2.path)
-		}
-		//fmt.Printf("missing rootmask=%b, mask=%b, rootcnts=%v\n", rootmask, mask, rootcnts)
-		if rootmask != mask {
-			//fmt.Printf("missing roots=%b, mask=%b\n", roots, mask)
 		}
 		fmt.Printf("\n")
 	case *r && len(v) > ndirs && *pd:
@@ -523,7 +513,6 @@ func check(kind string, ndirs int) {
 		//fmt.Printf("check:\t%q %d %d\n", v[0].path, len(v), ndirs)
 		printEntry(k, v, ndirs)
 	}
-
 	if *ps {
 		if *r {
 			fmt.Printf("# %d %s missing\n", count, kind)
@@ -556,7 +545,6 @@ func main() {
 
 	flag.Var(&_fthreshold, "ft", "file sizes <= threshhold will not be considered")
 	flag.Var(&_dthreshold, "dt", "directory sizes <= threshhold will not be considered")
-	//fmt.Printf("dedup\n")
 	flag.Parse()
 	if *pat != "" {
 		re, err := regexp.Compile(*pat)
@@ -574,8 +562,6 @@ func main() {
 	}
 	fthreshold = int64(_fthreshold.V)
 	dthreshold = int64(_dthreshold.V)
-	//fmt.Printf("fthreshold=%d\n", fthreshold)
-	//fmt.Printf("dthreshold=%d\n", dthreshold)
 	if *dirf {
 		kind = "dirs"
 	}
