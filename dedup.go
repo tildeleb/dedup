@@ -8,23 +8,24 @@
 // Without the -d (directory) switch dedup recursively scans the supplied directories in depth first
 // order and records the hash of each file in a map of slices keyed by the hash. After the scan is
 // complete, the resulting map is iterated, and if any of the slices have a length of more than 1,
-// then the files on that slice are all duplicates of each other.
+// then all the files on that slice are all duplicates of each other.
 //
 // If -d swicth is supplied the hashes of files in each directory are themselves recursively hashed and
-// the resulting hashes of each directory (but not the files) are recorded in the map. Again, if the length
-// of any slice is more than 1 then the entire directory is duplicated.
-//
-// The program works with more than two directories, but sometimes, not as well.
-//
-// The -p switch prints out the the requested information.
-// The -ps switch just prints a summary of how many files or directories were duplicated
-// and now much space they take up. Without a switch to print, no output is generated.
+// the resulting fingerprints for each directory (but not the files) are recorded in the map. Again, if the length
+// of any slice is more than 1, then the entire directory is duplicated.
+// The -d switch works with more than two directories, but sometimes not as well.
 //
 // If the -r switch is supplied, reverses the sense of the program and files or directories that
 // ARE NOT duplicated are printed. When the map is scanned, any slices with a length different than
 // the number of supplied directores are printed as these represent missing files. This allows
 // directories to be easily compared and more than two can easily be compared. Even cooler is that
 // the program works even if files or directories have been renamed.
+//
+// Without a switch to print, no output is generated.
+// The -p prints out the pathnames of duplicated or missing files o directories.
+// The -ps prints a summary of the number of files or dir that were duplicated and now much space they take up.
+// The F, S, H, L, and N switches print the fingerprint, size, human readbale size,
+// hash chain length, and number of roots respectively.
 //
 // Exmaples
 // % dedup -p ~/Desktop
