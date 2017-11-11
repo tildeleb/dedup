@@ -95,22 +95,21 @@ var ps = flag.Bool("ps", false, "print summary")
 var pd = flag.Bool("pd", false, "print duplicates with -r")
 var fp = flag.Uint64("fp", 0, "fingerprint to search for.")
 
-var blockSize = flag.Int64("b", 8192, "block size")
+var blockSize = flag.Int64("b", 8192, "block size") // used when reading files
 
-var _fthreshold hrff.Int64
-var _dthreshold hrff.Int64
+var _fthreshold = hrff.Int64{1, "B"}  // zero length files are excluded
+var _dthreshold = hrff.Int64{-1, "B"} // zero length directories are incldued
 var fthreshold int64
-var dthreshold int64 = -1
+var dthreshold int64
 
-var total int64
-var count int64
+var roots []string // list of directories passed on the command line
 var hmap = make(map[uint64][]kfe, 100)
 var smap = make(map[int64][]kfe, 100)
-var roots []string
-
+var hf hash.Hash64 = aeshash.NewAES(0)
+var zeroHash = zhash() // the null hash (no bytes passed)
 var ignoreList = []string{".Spotlight-V100", ".fseventsd"}
-
-var hf hash.Hash64
+var total int64
+var count int64
 
 func fullName(path string, fi os.FileInfo) string {
 	p := ""
@@ -122,11 +121,16 @@ func fullName(path string, fi os.FileInfo) string {
 	return p
 }
 
+func zhash() uint64 {
+	hf.Reset()
+	return hf.Sum64()
+}
+
 func readFullHash(path string, fi os.FileInfo) (r uint64) {
 	p := fullName(path, fi)
 	//fmt.Printf("readFullHash: path=%q fi.Name=%q, p=%q\n", path, fi.Name(), p)
 	if fi.Size() == 0 {
-		return 0
+		return zeroHash
 	}
 	buf := make([]byte, *blockSize)
 
@@ -171,7 +175,7 @@ func readPartialHash(path string, fi os.FileInfo) (r uint64) {
 
 	//fmt.Printf("readPartialHash: path=%q fi.Name=%q, p=%q\n", path, fi.Name(), p)
 	if fi.Size() == 0 {
-		return 0
+		return zeroHash
 	}
 	buf := make([]byte, bsize)
 
@@ -247,23 +251,12 @@ func add(hash uint64, size int64, k *kfe) {
 
 func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	p := fullName(path, fi)
-	//fmt.Printf("addFile: path=%q, fi.Name()=%q, hash=%#x, p=%q\n", path, fi.Name(), hash, p)
+	//fmt.Printf("addFile: path=%q, fi.Name()=%q, hash=%016x, p=%q\n", path, fi.Name(), hash, p)
 	//fmt.Printf("addFile: hash=%016x, p=%q\n", hash, p)
 	k1 := kfe{root, p, fi.Size(), 0}
 
 	skey := fi.Size()
-	// 0 length files are currently silently ignored
-	// they are not identical
-	//hkey := uint64(0)
-	/*
-		if skey > fthreshold {
-			if *fr {
-				hkey = readFullHash(path, fi)
-			} else {
-				hkey = readPartialHash(path, fi)
-			}
-		}
-	*/
+	// 0 length files are currently silently ignored they are not identical, is this still true?
 	add(hash, skey, &k1)
 	// smap not used
 	_, ok2 := smap[skey]
@@ -275,7 +268,7 @@ func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 }
 
 func addDir(root int, path string, fi os.FileInfo, hash uint64, size int64) {
-	if size < dthreshold {
+	if size <= dthreshold {
 		return // should dirs respect threshold or is it only for files?
 	}
 	p := fullName(path, fi)
@@ -338,7 +331,7 @@ func descend(root int, path string, fis []os.FileInfo,
 				}
 			case fi.Mode()&os.ModeType == 0:
 				stats.scannedFiles++
-				if fi.Size() > fthreshold && (*pat == "" || (*pat != "" && patre.MatchString(fi.Name()))) {
+				if fi.Size() >= fthreshold && (*pat == "" || (*pat != "" && patre.MatchString(fi.Name()))) {
 					if *fr {
 						hash = readFullHash(path, fi)
 					} else {
@@ -347,7 +340,7 @@ func descend(root int, path string, fis []os.FileInfo,
 					gh.Write64(hash)
 					sizes += fi.Size()
 					stats.matchedFiles++
-					//fmt.Printf("descend: file: path=%q, fi.Name()=%q, hash=0x%016x, size=%d, sizes=%d\n", path, fi.Name(), hash, size, sizes)
+					//fmt.Printf("descend: file: path=%q, fi.Name()=%q, hash=%016x, size=%d, sizes=%d\n", path, fi.Name(), hash, size, sizes)
 					if ffp != nil {
 						ffp(root, path, fi, hash, size)
 					}
@@ -564,7 +557,6 @@ func main() {
 	flag.Var(&_fthreshold, "ft", "file sizes <= threshhold will not be considered")
 	flag.Var(&_dthreshold, "dt", "directory sizes <= threshhold will not be considered")
 	//fmt.Printf("dedup\n")
-	hf = aeshash.NewAES(0)
 	flag.Parse()
 	if *pat != "" {
 		re, err := regexp.Compile(*pat)
@@ -592,8 +584,8 @@ func main() {
 		for _, root := range flag.Args() {
 			fi, err := os.Stat(root)
 			if err != nil || fi == nil {
-				fmt.Printf("fi=%#v, err=%v\n", fi, err)
-				panic("bad")
+				fmt.Printf("directory=%#v, err=%v, skipped\n", fi, err)
+				continue
 			}
 			if fi.Mode()&os.ModeDir == os.ModeDir {
 				ndirs++
