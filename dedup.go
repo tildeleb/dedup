@@ -251,7 +251,6 @@ func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	k1 := kfe{root, p, fi.Size(), 0}
 
 	skey := fi.Size()
-	// 0 length files are currently silently ignored they are not identical, is this still true?
 	add(hash, skey, &k1)
 	// smap not used
 	_, ok2 := smap[skey]
@@ -470,14 +469,20 @@ func printLine(hash uint64, length, ndirs int, siz int64, path string) {
 	fmt.Printf("%q\n", path)
 }
 
-// check for inlined, better name for this
-// calcRootsMask calculates if each entry on the chain is on a different root
-// calculate the number of hashes on each root
-// return if the file doesn't exist on all roots and if the root counts aren't all one
-func calcRootsMask(kfes []kfe, ndirs int) (bool, bool) {
+// calcRootMembership given a slice of kfe, if there is a kfe per root.
+// It does this two different ways, one a bit mask per root
+// and the other with a count per root. It return if the file doesn't exist on all roots using the mask
+// and if the root counts aren't all one.
+// Some work to do here to decide if we can do better than this.
+// In general, with fingerprints, there are some difficult edge cases.
+// Todo: check for inline and remove ndirs
+func calcRootMembership(kfes []kfe, ndirs int) (bool, bool) {
 	var rootmask uint64
 
-	rootcnts := make([]int, len(roots))
+	if ndirs != len(roots) {
+		panic("calcRootMembership")
+	}
+	rootcnts := make([]int, ndirs)
 	mask := (uint64(1) << uint64(ndirs)) - 1
 	for _, kfe := range kfes {
 		rootmask |= 1 << uint64(kfe.root)
@@ -495,7 +500,7 @@ func calcRootsMask(kfes []kfe, ndirs int) (bool, bool) {
 }
 
 func printEntry(k uint64, v []kfe, ndirs int) {
-	neq, rone := calcRootsMask(v, ndirs)
+	neq, rone := calcRootMembership(v, ndirs)
 	switch {
 	case *r && (len(v) < ndirs || neq || !rone) && !*pd:
 		for _, v2 := range v {
