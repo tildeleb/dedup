@@ -2,7 +2,7 @@
 
 // dedup scans files or directories and calculates fingerprint hashes for them based on their contents.
 //
-// Originaly written on a plane from SFO->EWR on 7-23-15 in about an hour.
+// Originally written on a plane from SFO->EWR on 7-23-15 in about an hour.
 // Based on an idea I had been mulling in my mind for years.
 //
 // Without the -d (directory) switch dedup recursively scans the supplied directories in depth first
@@ -10,31 +10,31 @@
 // complete, the resulting map is iterated, and if any of the slices have a length of more than 1,
 // then all the files on that slice are all duplicates of each other.
 //
-// If -d swicth is supplied the hashes of files in each directory are themselves recursively hashed and
+// If -d switch is supplied the hashes of files in each directory are themselves recursively hashed and
 // the resulting fingerprints for each directory (but not the files) are recorded in the map. Again, if the length
 // of any slice is more than 1, then the entire directory is duplicated.
 // The -d switch works with more than two directories, but sometimes not as well.
 //
 // If the -r switch is supplied, reverses the sense of the program and files or directories that
 // ARE NOT duplicated are printed. When the map is scanned, any slices with a length different than
-// the number of supplied directores are printed as these represent missing files. This allows
+// the number of supplied directories are printed as these represent missing files. This allows
 // directories to be easily compared and more than two can easily be compared. Even cooler is that
 // the program works even if files or directories have been renamed.
 //
 // Without a switch to print, no output is generated.
 // The -p prints out the pathnames of duplicated or missing files o directories.
 // The -ps prints a summary of the number of files or dir that were duplicated and now much space they take up.
-// The F, S, H, L, and N switches print the fingerprint, size, human readbale size,
+// The F, S, H, L, and N switches print the fingerprint, size, human readable size,
 // hash chain length, and number of roots respectively.
 //
-// Exmaples
+// Examples
 // % dedup -p ~/Desktop
 // % dedup -d -p dir1 dir2
 // % dedup -d -r -p dir1 dir2
 //
 // The hash used is the asehash from the Go runtime. It's fast and passes smhahser.
 // The map of slices is not the most memory efficient representation and at some
-// point it proably makes sense to switch to a cuckoo hash table.
+// point it probably makes sense to switch to a cuckoo hash table.
 //
 package main
 
@@ -43,8 +43,8 @@ import (
 	"fmt"
 	"hash"
 	"leb.io/aeshash"
-	_ "leb.io/hashland/jenkins"
 	"leb.io/hrff"
+	"leb.io/siginfo"
 	"log"
 	"os"
 	"regexp"
@@ -88,27 +88,24 @@ var print = flag.Bool("p", false, "print duplicated dirs or files")
 var ps = flag.Bool("ps", false, "print summary")
 var pd = flag.Bool("pd", false, "print duplicates with -r")
 var fp = flag.Uint64("fp", 0, "fingerprint to search for.")
-
 var blockSize = flag.Int64("b", 8192, "block size") // used when reading files
-
-var _fthreshold = hrff.Int64{1, "B"}  // zero length files are excluded
-var _dthreshold = hrff.Int64{-1, "B"} // zero length directories are incldued
+var _fthreshold = hrff.Int64{1, "B"}                // zero length files are excluded
+var _dthreshold = hrff.Int64{-1, "B"}               // zero length directories are incldued
 var fthreshold int64
 var dthreshold int64
-
-var roots []string // list of directories passed on the command line
-var files []string // list of files passed on the command line
 
 var hmap = make(map[uint64][]kfe, 100)
 var smap = make(map[int64][]kfe, 100)
 var hf hash.Hash64 = aeshash.NewAES(0)
 var zeroHash = zhash() // the null hash (no bytes passed)
-var ignoreList = []string{".Spotlight-V100", ".fseventsd"}
+var ignoreList = []string{".DS_Store", ".Spotlight-V100", ".fseventsd"}
 var ddre *regexp.Regexp
 var patre *regexp.Regexp
 var stats stat
 var total int64
 var count int64
+var printOnePath bool
+var phase = "scan"
 
 func fullName(path string, fi os.FileInfo) string {
 	p := ""
@@ -125,6 +122,7 @@ func zhash() uint64 {
 	return hf.Sum64()
 }
 
+// readFullHash reads an entire file and calculates the hash.
 func readFullHash(path string, fi os.FileInfo) (r uint64) {
 	p := fullName(path, fi)
 	//fmt.Printf("readFullHash: path=%q fi.Name=%q, p=%q\n", path, fi.Name(), p)
@@ -163,6 +161,7 @@ func readFullHash(path string, fi os.FileInfo) (r uint64) {
 
 var readList = []float64{0.0, 0.5, 1.0} // at least 0.0 must be first and 1.0 must be last
 
+// readPartialHash reads a pieces of a file and calculates the hash.
 func readPartialHash(path string, fi os.FileInfo) (r uint64) {
 	var eo float64
 	p := fullName(path, fi)
@@ -177,7 +176,8 @@ func readPartialHash(path string, fi os.FileInfo) (r uint64) {
 
 	f, err := os.Open(p)
 	if err != nil {
-		panic("readPartialHash: Open")
+		fmt.Printf("readPartialHash: %v (skipped)\n", err)
+		return 0
 	}
 	defer f.Close()
 
@@ -244,6 +244,7 @@ func add(hash uint64, size int64, k *kfe) {
 	}
 }
 
+// addDir a file entry to the hash map.
 func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	p := fullName(path, fi)
 	//fmt.Printf("addFile: path=%q, fi.Name()=%q, hash=%016x, p=%q\n", path, fi.Name(), hash, p)
@@ -261,6 +262,7 @@ func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	}
 }
 
+// addDir a directory entry to the hash map.
 func addDir(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	if size <= dthreshold {
 		return // should dirs respect threshold or is it only for files?
@@ -271,6 +273,7 @@ func addDir(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 	add(hash, size, &k1)
 }
 
+// descent recursively descends the directory hierarchy.
 func descend(root int, path string, fis []os.FileInfo,
 	ffp func(root int, path string, fis os.FileInfo, hash uint64, size int64),
 	dfp func(root int, path string, fis os.FileInfo, hash uint64, size int64)) (uint64, int64) {
@@ -284,6 +287,10 @@ func descend(root int, path string, fis []os.FileInfo,
 	outer:
 		for _, fi := range fis {
 			//fmt.Printf("descend: enter fi.Name=%q\n", fi.Name())
+			if printOnePath {
+				fmt.Printf("%d/%d \"%s/%s\"\n", stats.scannedFiles, stats.scannedDirs, path, fi.Name())
+				printOnePath = false
+			}
 			switch {
 			case fi.Mode()&os.ModeDir == os.ModeDir:
 				//fmt.Printf("descend: dir: path=%q, fi.Name()=%q\n", path, fi.Name())
@@ -330,6 +337,9 @@ func descend(root int, path string, fis []os.FileInfo,
 						hash = readFullHash(path, fi)
 					} else {
 						hash = readPartialHash(path, fi)
+					}
+					if hash == 0 {
+						continue
 					}
 					gh.Write64(hash)
 					sizes += fi.Size()
@@ -479,9 +489,6 @@ func printLine(hash uint64, length, ndirs int, siz int64, path string) {
 func calcRootMembership(kfes []kfe, ndirs int) (bool, bool) {
 	var rootmask uint64
 
-	if ndirs != len(roots) {
-		panic("calcRootMembership")
-	}
 	rootcnts := make([]int, ndirs)
 	mask := (uint64(1) << uint64(ndirs)) - 1
 	for _, kfe := range kfes {
@@ -494,39 +501,43 @@ func calcRootMembership(kfes []kfe, ndirs int) (bool, bool) {
 			rone = false
 		}
 	}
-	//fmt.Printf("calcRootsMask: ndirs=%d, len(v)=%d, rootmask=%b, mask=%b, rootcnts=%v\n", ndirs, len(v), rootmask, mask, rootcnts)
-	//fmt.Printf("calcRootsMask: rootmask=%b, mask=%b, rootcnts=%v, rone=%v\n", rootmask, mask, rootcnts, rone)
+	//fmt.Printf("calcRootsMask: ndirs=%d, rootmask=%b, mask=%b, rootcnts=%v, rone=%v\n", ndirs, rootmask, mask, rootcnts, rone)
 	return mask != rootmask, rone
 }
 
+// printEntry decides which entries to print
 func printEntry(k uint64, v []kfe, ndirs int) {
-	neq, rone := calcRootMembership(v, ndirs)
-	switch {
-	case *r && (len(v) < ndirs || neq || !rone) && !*pd:
+	var pl = func() {
 		for _, v2 := range v {
 			total += v2.size
 			count++
-			printLine(k, len(v), ndirs, v2.size, v2.path)
-		}
-		fmt.Printf("\n")
-	case *r && len(v) > ndirs && *pd:
-		for _, v2 := range v {
-			total += v2.size
-			count++
-			printLine(k, len(v), ndirs, v2.size, v2.path)
-		}
-	case !*r:
-		if len(v) > 1 && *print {
-			for _, v2 := range v {
-				total += v2.size
-				count++
+			if *print {
 				printLine(k, len(v), ndirs, v2.size, v2.path)
 			}
+		}
+		if *print {
 			fmt.Printf("\n")
 		}
 	}
+	if !*r {
+		if len(v) > 1 {
+			pl()
+			return
+		}
+	}
+	neq, rone := calcRootMembership(v, ndirs)
+	//fmt.Printf("printEntry: len(v)=%d, ndirs=%d, neq=%v, rone=%v, *pd=%v\n", len(v), ndirs, neq, rone, *pd)
+	switch {
+	case *r && len(v) < ndirs && !*pd:
+		pl()
+	case *r && len(v) == ndirs && (neq || !rone) && !*pd:
+		pl()
+	case *r && len(v) >= ndirs && *pd:
+		pl()
+	}
 }
 
+// check the kfes in random order and print them, print a summary if requested.
 func check(kind string, ndirs int) {
 	//fmt.Printf("check: kind=%q, ndirs=%d, len(hmap)=%d\n", kind, ndirs, len(hmap))
 	for k, v := range hmap {
@@ -543,6 +554,7 @@ func check(kind string, ndirs int) {
 	}
 }
 
+// check the kfes in sorted order and print them, print a summary if requested.
 func checks(kind string, ndirs int) {
 	//fmt.Printf("check2: len(indicies)=%d\n", len(indicies))
 	for _, vi := range indicies {
@@ -559,7 +571,14 @@ func checks(kind string, ndirs int) {
 	}
 }
 
+func f() {
+	fmt.Printf("%s: ", phase)
+	printOnePath = true
+}
+
 func main() {
+	var roots []string // list of directories passed on the command line
+	var files []string // list of files passed on the command line
 	var kind string = "files"
 	var ndirs, nfiles int
 
@@ -603,6 +622,7 @@ func main() {
 		}
 	}
 
+	siginfo.SetHandler(f)
 	scan(roots, files)
 
 	if *fp != 0 {
@@ -610,10 +630,13 @@ func main() {
 		return
 	}
 	if *s {
+		phase = "sort"
 		asort()
+		phase = "check"
 		checks(kind, ndirs)
 
 	} else {
+		phase = "check"
 		check(kind, ndirs)
 	}
 }
