@@ -519,6 +519,7 @@ func printEntry(k uint64, v []kfe, ndirs int) {
 			fmt.Printf("\n")
 		}
 	}
+	// easy case, chain length more than 1, files are duplicated
 	if !*r {
 		if len(v) > 1 {
 			pl()
@@ -528,11 +529,9 @@ func printEntry(k uint64, v []kfe, ndirs int) {
 	neq, rone := calcRootMembership(v, ndirs)
 	//fmt.Printf("printEntry: len(v)=%d, ndirs=%d, neq=%v, rone=%v, *pd=%v\n", len(v), ndirs, neq, rone, *pd)
 	switch {
-	case *r && len(v) < ndirs && !*pd:
+	case *r && len(v) <= ndirs && (neq || !rone) && !*pd: // one root doesn't have a dir or file
 		pl()
-	case *r && len(v) == ndirs && (neq || !rone) && !*pd:
-		pl()
-	case *r && len(v) >= ndirs && *pd:
+	case *r && len(v) > ndirs && *pd: // probably some root has more than 1 copy of the file/dir
 		pl()
 	}
 }
