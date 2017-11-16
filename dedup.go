@@ -479,13 +479,13 @@ func printLine(hash uint64, length, ndirs int, siz int64, path string) {
 	fmt.Printf("%q\n", path)
 }
 
-// calcRootMembership given a slice of kfe, if there is a kfe per root.
-// It does this two different ways, one a bit mask per root
-// and the other with a count per root. It return if the file doesn't exist on all roots using the mask
+// calcRootMembership given a slice of kfe, calculates if there is a kfe per root.
+// It does this two different ways, first, a bit mask per root
+// and the second, a count per root. It return if the file doesn't exist on all roots using the mask
 // and if the root counts aren't all one.
-// Some work to do here to decide if we can do better than this.
+// Need to decide if I can do better than this.
 // In general, with fingerprints, there are some difficult edge cases.
-// Todo: check for inline and remove ndirs
+// Todo: check for inline
 func calcRootMembership(kfes []kfe, ndirs int) (bool, bool) {
 	var rootmask uint64
 
@@ -526,12 +526,13 @@ func printEntry(k uint64, v []kfe, ndirs int) {
 			return
 		}
 	}
+	// Below find cases for non-duplicated files
 	neq, rone := calcRootMembership(v, ndirs)
 	//fmt.Printf("printEntry: len(v)=%d, ndirs=%d, neq=%v, rone=%v, *pd=%v\n", len(v), ndirs, neq, rone, *pd)
 	switch {
 	case *r && len(v) <= ndirs && (neq || !rone) && !*pd: // one root doesn't have a dir or file
 		pl()
-	case *r && len(v) > ndirs && *pd: // probably some root has more than 1 copy of the file/dir
+	case *r && len(v) > ndirs && *pd: // probably at least one root has more than 1 copy of the file/dir
 		pl()
 	}
 }
@@ -581,8 +582,8 @@ func main() {
 	var kind string = "files"
 	var ndirs, nfiles int
 
-	flag.Var(&_fthreshold, "ft", "file sizes <= threshhold will not be considered")
-	flag.Var(&_dthreshold, "dt", "directory sizes <= threshhold will not be considered")
+	flag.Var(&_fthreshold, "ft", "file sizes <= threshold will not be considered")
+	flag.Var(&_dthreshold, "dt", "directory sizes <= threshold will not be considered")
 	flag.Parse()
 	if *pat != "" {
 		re, err := regexp.Compile(*pat)
