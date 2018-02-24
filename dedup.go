@@ -56,10 +56,11 @@ import (
 // The hash map entries point here to one of these.
 // Space hasn't been an issue on my 0.5TB, 16 GB MacBook Pro.
 type kfe struct {
-	root int
-	path string
-	size int64
-	hash uint64
+	root  int
+	level int
+	path  string
+	size  int64
+	hash  uint64
 }
 
 type stat struct {
@@ -79,12 +80,16 @@ var l = flag.Int("l", 1, "print fingerprints with more than l entries on chain")
 var dirf = flag.Bool("d", false, "hash directories")
 var r = flag.Bool("r", false, "reverse sense; display non-duplicated files")
 
+var v = flag.Bool("v", false, "verbose flag, print a line for each file or directory added")
 var s = flag.Bool("s", false, "sort duplicate files by size from largest to smallest")
 var rs = flag.Bool("rs", false, "reverse sense of sort, smallest to largest")
 var fr = flag.Bool("fr", false, "full read; read the entire file")
 var pat = flag.String("pat", "", "regexp pattern to match filenames")
 var dd = flag.String("dd", "", "do not descend past dirs named this")
 var print = flag.Bool("p", false, "print duplicated dirs or files")
+var p0 = flag.Bool("p0", false, "print only level 0 files or dirs")
+var p1 = flag.Bool("p1", false, "print only level 0 or 1 files or dirs")
+var prune = flag.Int("prune", 999, "prune print to files of level or less")
 var ps = flag.Bool("ps", false, "print summary")
 var pd = flag.Bool("pd", false, "print duplicates with -r")
 var fp = flag.Uint64("fp", 0, "fingerprint to search for.")
@@ -98,7 +103,7 @@ var hmap = make(map[uint64][]kfe, 100)
 var smap = make(map[int64][]kfe, 100)
 var hf hash.Hash64 = aeshash.NewAES(0)
 var zeroHash = zhash() // the null hash (no bytes passed)
-var ignoreList = []string{".DS_Store", ".Spotlight-V100", ".fseventsd"}
+var ignoreList = []string{".DS_Store", ".Spotlight-V100", ".fseventsd", ".git"}
 var ddre *regexp.Regexp
 var patre *regexp.Regexp
 var stats stat
@@ -245,11 +250,13 @@ func add(hash uint64, size int64, k *kfe) {
 }
 
 // addDir a file entry to the hash map.
-func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
+func addFile(root, level int, path string, fi os.FileInfo, hash uint64, size int64) {
 	p := fullName(path, fi)
 	//fmt.Printf("addFile: path=%q, fi.Name()=%q, hash=%016x, p=%q\n", path, fi.Name(), hash, p)
-	//fmt.Printf("addFile: hash=%016x, p=%q\n", hash, p)
-	k1 := kfe{root, p, fi.Size(), 0}
+	if *v {
+		fmt.Printf("addFile: hash=%016x, p=%q\n", hash, p)
+	}
+	k1 := kfe{root, level, p, fi.Size(), 0}
 
 	skey := fi.Size()
 	add(hash, skey, &k1)
@@ -263,27 +270,32 @@ func addFile(root int, path string, fi os.FileInfo, hash uint64, size int64) {
 }
 
 // addDir a directory entry to the hash map.
-func addDir(root int, path string, fi os.FileInfo, hash uint64, size int64) {
+func addDir(root, level int, path string, fi os.FileInfo, hash uint64, size int64) {
 	if size <= dthreshold {
 		return // should dirs respect threshold or is it only for files?
 	}
 	p := fullName(path, fi)
-	//fmt.Printf("addDir: path=%q, fi.Name()=%q, p=%q, size=%d, hash=0x%016x\n", path, fi.Name(), p, size, hash)
-	k1 := kfe{root, p, size, hash}
+	//fmt.Printf("addDir: path=%q, fi.Name()=%q, p=%q, size=%d, level=%d, hash=0x%016x\n", path, fi.Name(), p, size, level, hash)
+	if *v {
+		fmt.Printf("addDir : hash=%016x, p=%q\n", hash, p)
+	}
+	k1 := kfe{root, level, p, size, hash}
 	add(hash, size, &k1)
 }
 
 // descent recursively descends the directory hierarchy.
 func descend(root int, path string, fis []os.FileInfo,
-	ffp func(root int, path string, fis os.FileInfo, hash uint64, size int64),
-	dfp func(root int, path string, fis os.FileInfo, hash uint64, size int64)) (uint64, int64) {
+	ffp func(root, level int, path string, fis os.FileInfo, hash uint64, size int64),
+	dfp func(root, level int, path string, fis os.FileInfo, hash uint64, size int64)) (uint64, int64) {
 
+	var level int = -1
 	var des func(root int, path string, fis []os.FileInfo) (uint64, int64)
 	des = func(root int, path string, fis []os.FileInfo) (uint64, int64) {
 		var hash uint64
 		var size, sizes int64
 		var gh = aeshash.NewAES(0)
 
+		level++
 	outer:
 		for _, fi := range fis {
 			//fmt.Printf("descend: enter fi.Name=%q\n", fi.Name())
@@ -295,17 +307,17 @@ func descend(root int, path string, fis []os.FileInfo,
 			case fi.Mode()&os.ModeDir == os.ModeDir:
 				//fmt.Printf("descend: dir: path=%q, fi.Name()=%q\n", path, fi.Name())
 				stats.scannedDirs++
+				for _, name := range ignoreList {
+					if fi.Name() == name {
+						//fmt.Printf("descend: skip dir=%q\n", fi.Name())
+						continue outer
+					}
+				}
 				if *dd != "" {
 					b := ddre.MatchString(fi.Name())
 					if b {
 						//fmt.Printf("descend: skip dir=%q\n", fi.Name())
 						continue
-					}
-				}
-				for _, name := range ignoreList {
-					if fi.Name() == name {
-						fmt.Printf("descend: skip dir=%q\n", fi.Name())
-						continue outer
 					}
 				}
 				p := fullName(path, fi)
@@ -328,10 +340,16 @@ func descend(root int, path string, fis []os.FileInfo,
 				stats.matchedDirs++
 				if dfp != nil {
 					//fmt.Printf("descend: dfp: path=%q, fi.Name()=%q, hash=0x%016x, size=%d\n", path, fi.Name(), hash, size)
-					dfp(root, path, fi, hash, size)
+					dfp(root, level, path, fi, hash, size)
 				}
 			case fi.Mode()&os.ModeType == 0:
 				stats.scannedFiles++
+				for _, name := range ignoreList {
+					if fi.Name() == name {
+						//fmt.Printf("descend: skip file=%q\n", fi.Name())
+						continue outer
+					}
+				}
 				if fi.Size() >= fthreshold && (*pat == "" || (*pat != "" && patre.MatchString(fi.Name()))) {
 					if *fr {
 						hash = readFullHash(path, fi)
@@ -346,7 +364,7 @@ func descend(root int, path string, fis []os.FileInfo,
 					stats.matchedFiles++
 					//fmt.Printf("descend: file: path=%q, fi.Name()=%q, hash=%016x, size=%d, sizes=%d\n", path, fi.Name(), hash, size, sizes)
 					if ffp != nil {
-						ffp(root, path, fi, hash, size)
+						ffp(root, level, path, fi, hash, size)
 					}
 				}
 			default:
@@ -355,6 +373,7 @@ func descend(root int, path string, fis []os.FileInfo,
 		}
 		hashes := gh.Sum64()
 		//fmt.Printf("descend: return dir=%q, hashes=0x%016x, sizes=%d\n", path, hashes, sizes)
+		level--
 		return hashes, sizes
 	}
 	//fmt.Printf("descend: path=%q\n", path)
@@ -458,7 +477,7 @@ func match(kind string, ndirs int) {
 	}
 }
 
-func printLine(hash uint64, length, ndirs int, siz int64, path string) {
+func printLine(hash uint64, length, ndirs, level int, siz int64, path string) {
 	if *F {
 		fmt.Printf("%016x ", hash)
 	}
@@ -476,7 +495,7 @@ func printLine(hash uint64, length, ndirs int, siz int64, path string) {
 	if *L {
 		fmt.Printf("%d ", length)
 	}
-	fmt.Printf("%q\n", path)
+	fmt.Printf("%q %d\n", path, level)
 }
 
 // calcRootMembership given a slice of kfe, calculates if there is a kfe per root.
@@ -509,15 +528,20 @@ func calcRootMembership(kfes []kfe, ndirs int) (bool, bool) {
 func printEntry(k uint64, v []kfe, ndirs int) {
 	var pl = func() {
 		for _, v2 := range v {
+			if v2.level > *prune {
+				continue
+			}
 			total += v2.size
 			count++
 			if *print {
-				printLine(k, len(v), ndirs, v2.size, v2.path)
+				printLine(k, len(v), ndirs, v2.level, v2.size, v2.path)
 			}
 		}
-		if *print {
-			fmt.Printf("\n")
-		}
+		/*
+			if *print {
+				fmt.Printf("\n")
+			}
+		*/
 	}
 	// easy case, chain length more than 1, files are duplicated
 	if !*r {
@@ -604,7 +628,12 @@ func main() {
 	if *dirf {
 		kind = "dirs"
 	}
-
+	switch {
+	case *p0:
+		*prune = 0
+	case *p1:
+		*prune = 1
+	}
 	if len(flag.Args()) != 0 {
 		for _, arg := range flag.Args() {
 			fi, err := os.Stat(arg)
