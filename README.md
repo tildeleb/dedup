@@ -61,7 +61,7 @@ Examples
 
 Output Format
 -------------
-	leb@hula-3:~/gotest/src/leb.io/dedup % dedup -p -F z z1
+	leb@hula-3:~/gotest/src/github.com/tildeleb/dedup % dedup -p -F z z1
 	0f6fc1f830df9250 "z/b1"
 	0f6fc1f830df9250 "z/b2"
 	
