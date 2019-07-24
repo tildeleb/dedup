@@ -605,6 +605,13 @@ func f() {
 	printOnePath = true
 }
 
+func usage() {
+	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "dedup [flags] dir [dirs]:\n\n")
+	fmt.Fprintf(os.Stderr, "flags:\n")
+	flag.PrintDefaults()
+}
+
 func main() {
 	var roots []string // list of directories passed on the command line
 	var files []string // list of files passed on the command line
@@ -613,6 +620,8 @@ func main() {
 
 	flag.Var(&_fthreshold, "ft", "file sizes <= threshold will not be considered")
 	flag.Var(&_dthreshold, "dt", "directory sizes <= threshold will not be considered")
+	flag.Usage = usage
+
 	flag.Parse()
 	if *pat != "" {
 		re, err := regexp.Compile(*pat)
@@ -654,6 +663,8 @@ func main() {
 				nfiles++
 			}
 		}
+	} else {
+		usage()
 	}
 
 	siginfo.SetHandler(f)
