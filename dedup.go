@@ -1,11 +1,11 @@
-// Copyright © 2015-2017 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2015-2018 Lawrence E. Bakst. All rights reserved.
 
 // dedup scans files or directories and calculates fingerprint hashes for them based on their contents.
 //
 // Originally written on a plane from SFO->EWR on 7-23-15 in about an hour.
 // Based on an idea I had been mulling in my mind for years.
 //
-// Without the -d (directory) switch dedup recursively scans the supplied directories in depth first
+// Without the -d (directory) switch dedup recursively scans the supplied directories and files in depth first
 // order and records the hash of each file in a map of slices keyed by the hash. After the scan is
 // complete, the resulting map is iterated, and if any of the slices have a length of more than 1,
 // then all the files on that slice are all duplicates of each other.
@@ -73,8 +73,9 @@ type stat struct {
 var F = flag.Bool("F", false, "print fingerprint")
 var S = flag.Bool("S", false, "print size")
 var H = flag.Bool("H", false, "print human readable size")
-var L = flag.Bool("L", false, "print length of hash chain")
+var C = flag.Bool("C", false, "print length of hash chain")
 var N = flag.Bool("N", false, "print number of roots")
+var L = flag.Bool("L", false, "print level of directory or file, root is 0")
 var l = flag.Int("l", 1, "print fingerprints with more than l entries on chain")
 
 var dirf = flag.Bool("d", false, "hash directories")
@@ -87,6 +88,7 @@ var fr = flag.Bool("fr", false, "full read; read the entire file")
 var pat = flag.String("pat", "", "regexp pattern to match filenames")
 var dd = flag.String("dd", "", "do not descend past dirs named this")
 var print = flag.Bool("p", false, "print duplicated dirs or files")
+var dpnl = flag.Bool("dpnl", false, "don't print newline separators")
 var p0 = flag.Bool("p0", false, "print only level 0 files or dirs")
 var p1 = flag.Bool("p1", false, "print only level 0 or 1 files or dirs")
 var prune = flag.Int("prune", 999, "prune print to files of level or less")
@@ -492,15 +494,18 @@ func printLine(hash uint64, length, ndirs, level int, siz int64, path string) {
 	if *N {
 		fmt.Printf("%d ", ndirs)
 	}
-	if *L {
+	if *C {
 		fmt.Printf("%d ", length)
 	}
-	fmt.Printf("%q %d\n", path, level)
+	if *L {
+		fmt.Printf("%d ", level)
+	}
+	fmt.Printf("%q\n", path)
 }
 
 // calcRootMembership given a slice of kfe, calculates if there is a kfe per root.
 // It does this two different ways, first, a bit mask per root
-// and the second, a count per root. It return if the file doesn't exist on all roots using the mask
+// and the second, a count per root. It returns if the file doesn't exist on all roots using the mask
 // and if the root counts aren't all one.
 // Need to decide if I can do better than this.
 // In general, with fingerprints, there are some difficult edge cases.
@@ -526,6 +531,7 @@ func calcRootMembership(kfes []kfe, ndirs int) (bool, bool) {
 
 // printEntry decides which entries to print
 func printEntry(k uint64, v []kfe, ndirs int) {
+	var cnt int
 	var pl = func() {
 		for _, v2 := range v {
 			if v2.level > *prune {
@@ -534,14 +540,13 @@ func printEntry(k uint64, v []kfe, ndirs int) {
 			total += v2.size
 			count++
 			if *print {
+				cnt++
 				printLine(k, len(v), ndirs, v2.level, v2.size, v2.path)
 			}
 		}
-		/*
-			if *print {
-				fmt.Printf("\n")
-			}
-		*/
+		if cnt > 1 && *print && !*dpnl {
+			fmt.Printf("\n")
+		}
 	}
 	// easy case, chain length more than 1, files are duplicated
 	if !*r {

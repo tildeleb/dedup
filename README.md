@@ -1,6 +1,6 @@
 dedup
 =====
-Copyright © 2014, 2015, 2016, 2017 Lawrence E. Bakst. All rights reserved.  
+Copyright © 2014, 2015, 2016, 2017, 2018 Lawrence E. Bakst. All rights reserved.  
 
 Summary
 -------
@@ -19,38 +19,48 @@ N.B. that because`-dt` will cull files it affects the fingerprints generated for
 Usage
 -----
 
-	Usage of dedup:
-	  -F    print fingerprint
-	  -H    print human readable size
-	  -L    print length of hash chain
-	  -N    print number of roots
-	  -S    print size
-	  -b int
-	        block size (default 8192)
-	  -d    hash directories
-	  -dd string
-	        do not descend past dirs named this
-	  -dt value
-	        directory sizes <= threshhold will not be considered
-	  -fp uint
-	        fingerprint to search for.
-	  -fr
-	        full read; read the entire file
-	  -ft value
-	        file sizes <= threshhold will not be considered
-	  -l int
-	        print fingerprints with more than l entries on chain (default 1)
-	  -p    print duplicated dirs or files
-	  -pat string
-	        regexp pattern to match filenames
-	  -pd
-	        print duplicates with -r
-	  -ps
-	        print summary
-	  -r    reverse sense; display non-duplicated files
-	  -rs
-	        reverse sense of sort, smallest to largest
-	  -s    sort duplicate files by size from largest to smallest
+	Usage of ./dedup:
+  -C	print length of hash chain
+  -F	print fingerprint
+  -H	print human readable size
+  -L	print level of directory or file, root is 0
+  -N	print number of roots
+  -S	print size
+  -b int
+    	block size (default 8192)
+  -d	hash directories
+  -dd string
+    	do not descend past dirs named this
+  -dpnl
+    	don't print newline separators
+  -dt value
+    	directory sizes <= threshold will not be considered (default -1 B)
+  -fp uint
+    	fingerprint to search for.
+  -fr
+    	full read; read the entire file
+  -ft value
+    	file sizes <= threshold will not be considered (default 1 B)
+  -l int
+    	print fingerprints with more than l entries on chain (default 1)
+  -p	print duplicated dirs or files
+  -p0
+    	print only level 0 files or dirs
+  -p1
+    	print only level 0 or 1 files or dirs
+  -pat string
+    	regexp pattern to match filenames
+  -pd
+    	print duplicates with -r
+  -prune int
+    	prune print to files of level or less (default 999)
+  -ps
+    	print summary
+  -r	reverse sense; display non-duplicated files
+  -rs
+    	reverse sense of sort, smallest to largest
+  -s	sort duplicate files by size from largest to smallest
+  -v	verbose flag, print a line for each file or directory added
 
 Examples
 --------
@@ -58,6 +68,9 @@ Examples
 	% dedup -p d1
 	% # find files not in both d1 and d2
 	% dedup -d -r -p d1 d2
+	% # assume that directories d1 d2 are versions of each other
+	% # find differences between d1 and d2 but just print top level dirs that are different
+	% dedup -d -r -p -p0 d1 d2
 
 Output Format
 -------------
