@@ -20,47 +20,47 @@ Usage
 -----
 
 	Usage of ./dedup:
-  -C	print length of hash chain
-  -F	print fingerprint
-  -H	print human readable size
-  -L	print level of directory or file, root is 0
-  -N	print number of roots
-  -S	print size
-  -b int
-    	block size (default 8192)
-  -d	hash directories
-  -dd string
-    	do not descend past dirs named this
-  -dpnl
-    	don't print newline separators
-  -dt value
-    	directory sizes <= threshold will not be considered (default -1 B)
-  -fp uint
-    	fingerprint to search for.
-  -fr
-    	full read; read the entire file
-  -ft value
-    	file sizes <= threshold will not be considered (default 1 B)
-  -l int
-    	print fingerprints with more than l entries on chain (default 1)
-  -p	print duplicated dirs or files
-  -p0
-    	print only level 0 files or dirs
-  -p1
-    	print only level 0 or 1 files or dirs
-  -pat string
-    	regexp pattern to match filenames
-  -pd
-    	print duplicates with -r
-  -prune int
-    	prune print to files of level or less (default 999)
-  -ps
-    	print summary
-  -r	reverse sense; display non-duplicated files
-  -rs
-    	reverse sense of sort, smallest to largest
-  -s	sort duplicate files by size from largest to smallest
-  -v	verbose flag, print a line for each file or directory added
+	-C	print length of hash chain
+	-F	print fingerprint
+	-H	print human readable size
+	-L	print level of directory or file, root is 0
+	-N	print number of roots
+	-S	print size
+	-b int
+		block size (default 8192)
+	-d	hash directories
+	-dd string
+		do not descend past dirs named this
+	-dpnl
+		don't print newline separators
+	-dt value
+		directory sizes <= threshold will not be considered (default -1 B)
+	-fp uint
+		fingerprint to search for.
+	-fr
+		full read; read the entire file
+	-ft value
+		file sizes <= threshold will not be considered (default 1 B)
+	-l int
+		print fingerprints with more than l entries on chain (default 1)
+	-p	print duplicated dirs or files
+	-p0
+		print only level 0 files or dirs
+	-p1
+		print only level 0 or 1 files or dirs
+	-pat string
+		regexp pattern to match filenames
+	-pd
+		print duplicates with -r
+	-prune int
+		prune print to files of level or less (default 999)
+	-ps
+		print summary
+	-r	reverse sense; display non-duplicated files
+	-rs
+		reverse sense of sort, smallest to largest
+	-s	sort duplicate files by size from largest to smallest
+	-v	verbose flag, print a line for each file or directory added
 
 Examples
 --------
