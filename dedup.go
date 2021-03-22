@@ -42,14 +42,15 @@ import (
 	"flag"
 	"fmt"
 	"hash"
-	"leb.io/aeshash"
-	"leb.io/hrff"
-	"leb.io/siginfo"
 	"log"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
+
+	"leb.io/aeshash"
+	"leb.io/hrff"
+	"leb.io/siginfo"
 )
 
 // One kfe is generated for each file or directory that is put into the hash map.
@@ -600,7 +601,7 @@ func checks(kind string, ndirs int) {
 	}
 }
 
-func f() {
+func f(s os.Signal) {
 	fmt.Printf("%s: ", phase)
 	printOnePath = true
 }
@@ -667,7 +668,7 @@ func main() {
 		usage()
 	}
 
-	siginfo.SetHandler(f)
+	siginfo.SetHandler("SIGINT", f)
 	scan(roots, files)
 
 	if *fp != 0 {
